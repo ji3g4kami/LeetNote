@@ -1,5 +1,6 @@
 import SwiftUI
 import PencilKit
+import Vision
 
 // Main data structure for recognized shapes
 struct RecognizedElement: Identifiable {
@@ -50,6 +51,8 @@ struct ContentView: View {
     @State private var currentTool: DrawingTool = .pen
     @State private var selectionPath: Path?
     @State private var undoManager: UndoManager?
+    @State private var isSelectionActive = false
+    @State private var selectionBounds: CGRect = .zero
     
     var body: some View {
         ZStack {
@@ -60,34 +63,53 @@ struct ContentView: View {
                     currentTool == .selector ?
                     DragGesture()
                         .onChanged { value in
-                            // Create selection rectangle
-                            selectionPath = Path { path in
-                                let rect = CGRect(
-                                    origin: value.startLocation,
-                                    size: CGSize(
-                                        width: value.location.x - value.startLocation.x,
-                                        height: value.location.y - value.startLocation.y
-                                    )
+                            isSelectionActive = true
+                            let rect = CGRect(
+                                origin: value.startLocation,
+                                size: CGSize(
+                                    width: value.location.x - value.startLocation.x,
+                                    height: value.location.y - value.startLocation.y
                                 )
+                            )
+                            selectionPath = Path { path in
                                 path.addRect(rect)
                             }
-                        }
-                        .onEnded { _ in
-                            // Process selection
-                            detectElements()
-                            selectionPath = nil
+                            // Update bounds for button positioning
+                            selectionBounds = rect
                         }
                     : nil
                 )
             
-            // Show selection rectangle while dragging
-            if let path = selectionPath {
-                path.stroke(style: StrokeStyle(
-                    lineWidth: 2,
-                    dash: [5],
-                    dashPhase: 5
-                ))
-                .foregroundColor(.blue)
+            // Selection path view with floating button
+            if let path = selectionPath, isSelectionActive {
+                ZStack {
+                    // Selection rectangle
+                    path.stroke(style: StrokeStyle(
+                        lineWidth: 2,
+                        dash: [5],
+                        dashPhase: 5
+                    ))
+                    .foregroundColor(.blue)
+                    
+                    // Floating optimize button
+                    Button(action: {
+                        optimizeSelection()
+                        isSelectionActive = false
+                        selectionPath = nil
+                    }) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white)
+                            .padding(12)
+                            .background(Color.blue)
+                            .clipShape(Circle())
+                            .shadow(radius: 3)
+                    }
+                    .position(
+                        x: selectionBounds.maxX + 30,
+                        y: selectionBounds.minY - 30
+                    )
+                }
             }
             
             // Overlay for recognized elements
@@ -139,50 +161,76 @@ struct ContentView: View {
                 }
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Optimize Selection") {
-                    optimizeSelection()
-                }
-                .disabled(currentTool != .selector)
-            }
-        }
     }
     
     private func optimizeSelection() {
+        guard let selectionPath = selectionPath else { return }
+        
         let selectedStrokes = canvas.drawing.strokes.filter { stroke in
-            if let selectionPath = selectionPath {
-                return stroke.renderBounds.intersects(selectionPath.boundingRect)
-            }
-            return false
+            stroke.renderBounds.intersects(selectionPath.boundingRect)
         }
         
-        recognizeShape(from: selectedStrokes) { recognizedElement in
-            if let element = recognizedElement {
-                recognizedElements.append(element)
-                // Remove the selected strokes from the canvas
-                canvas.drawing.strokes.removeAll { stroke in
-                    selectedStrokes.contains(stroke)
-                }
+        // Create an image from the selected strokes
+        let renderer = UIGraphicsImageRenderer(bounds: selectionPath.boundingRect)
+        let strokeImage = renderer.image { context in
+            let drawing = PKDrawing(strokes: selectedStrokes)
+            drawing.image(from: selectionPath.boundingRect, scale: 1.0).draw(in: selectionPath.boundingRect)
+        }
+        
+        // Perform shape recognition using Vision
+        recognizeShape(from: strokeImage) { recognizedType in
+            let bounds = selectionPath.boundingRect
+            let element = RecognizedElement(
+                type: recognizedType,
+                bounds: bounds,
+                content: "1,2,3", // This should come from text recognition
+                originalStrokes: selectedStrokes
+            )
+            
+            recognizedElements.append(element)
+            
+            // Remove the selected strokes from the canvas
+            canvas.drawing.strokes.removeAll { stroke in
+                selectedStrokes.contains(stroke)
             }
         }
     }
     
-    private func recognizeShape(from strokes: [PKStroke], completion: @escaping (RecognizedElement?) -> Void) {
-        // Here you would implement computer vision recognition
-        // This is a placeholder that assumes it's an array
-        let bounds = strokes.reduce(CGRect.null) { result, stroke in
-            result.union(stroke.renderBounds)
+    private func recognizeShape(from image: UIImage, completion: @escaping (ElementType) -> Void) {
+        guard let cgImage = image.cgImage else {
+            completion(.array) // Default fallback
+            return
         }
         
-        let element = RecognizedElement(
-            type: .array,
-            bounds: bounds,
-            content: "1,2,3", // This should come from text recognition
-            originalStrokes: strokes
-        )
+        // Configure the request
+        let request = VNDetectRectanglesRequest { request, error in
+            guard let results = request.results as? [VNRectangleObservation] else {
+                completion(.array) // Default fallback
+                return
+            }
+            
+            // Analyze the detected rectangles
+            if results.count > 1 {
+                // Multiple rectangles might indicate an array
+                completion(.array)
+            } else if results.count == 1 {
+                // Single rectangle might be a tree node
+                completion(.tree)
+            } else {
+                // Default to array if unsure
+                completion(.array)
+            }
+        }
         
-        completion(element)
+        // Configure request parameters
+        request.minimumAspectRatio = 0.3
+        request.maximumAspectRatio = 1.0
+        request.quadratureTolerance = 45
+        request.minimumSize = 0.2
+        request.maximumObservations = 10
+        
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        try? handler.perform([request])
     }
     
     // Function to detect drawn elements
