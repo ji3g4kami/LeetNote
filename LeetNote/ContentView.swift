@@ -109,86 +109,123 @@ struct ContentView: View {
     @State private var draggedStrokes: [(stroke: PKStroke, initialTransform: CGAffineTransform)] = []
     @State private var dragStartLocation: CGPoint?
     @State private var originalDrawing: PKDrawing?  // Add this to store original drawing
+    @State private var previousLocation: CGPoint?
+    @State private var dragOffset: CGPoint?
+    @State private var strokeIdentifiers: [PKStroke: StrokeIdentifier] = [:]
+    @State private var activeStrokeState: StrokeState?
     
     var dragGesture: some Gesture {
         DragGesture()
             .onChanged { value in
                 if currentTool == .selector {
-                    isSelectionActive = true
-                    let rect = CGRect(
-                        origin: value.startLocation,
-                        size: CGSize(
-                            width: value.location.x - value.startLocation.x,
-                            height: value.location.y - value.startLocation.y
-                        )
-                    )
-                    selectionPath = Path { path in
-                        path.addRect(rect)
-                    }
-                    selectionBounds = rect
+                    handleSelectorDrag(value)
                 } else if currentTool == .hand {
-                    print("\n=== Hand Tool Drag ===")
-                    print("Current strokes in canvas:", canvas.drawing.strokes.count)
-                    
-                    // Only select strokes and store original drawing once at the start of drag
-                    if dragStartLocation == nil {
-                        print("Starting new drag at:", value.startLocation)
-                        dragStartLocation = value.startLocation
-                        originalDrawing = canvas.drawing  // Store original drawing
-                        
-                        let touchArea = CGRect(
-                            x: value.startLocation.x - 20,
-                            y: value.startLocation.y - 20,
-                            width: 40,
-                            height: 40
-                        )
-                        print("Touch area:", touchArea)
-                        
-                        // Select strokes under touch point
-                        draggedStrokes = canvas.drawing.strokes
-                            .filter { stroke in
-                                stroke.renderBounds.intersects(touchArea)
-                            }
-                            .map { ($0, $0.transform) }
-                        
-                        print("Selected \(draggedStrokes.count) strokes")
-                    }
-                    
-                    if !draggedStrokes.isEmpty, let originalDrawing = originalDrawing {
-                        let translation = CGPoint(
-                            x: value.location.x - dragStartLocation!.x,
-                            y: value.location.y - dragStartLocation!.y
-                        )
-                        print("Translation:", translation)
-                        
-                        // Start with original drawing
-                        var newDrawing = originalDrawing
-                        
-                        // Remove the original strokes that are being dragged
-                        newDrawing.strokes.removeAll { stroke in
-                            draggedStrokes.contains { $0.stroke.renderBounds == stroke.renderBounds }
-                        }
-                        
-                        // Add transformed strokes
-                        for (stroke, _) in draggedStrokes {
-                            var transformedStroke = stroke
-                            transformedStroke.transform = CGAffineTransform(translationX: translation.x, y: translation.y)
-                            newDrawing.strokes.append(transformedStroke)
-                        }
-                        
-                        canvas.drawing = newDrawing
-                    }
+                    handleHandDrag(value)
                 }
             }
             .onEnded { _ in
                 if currentTool == .hand {
-                    print("\n=== Drag Ended ===")
-                    print("Clearing selection")
-                    draggedStrokes.removeAll()
-                    dragStartLocation = nil
-                    originalDrawing = nil  // Clear original drawing
+                    resetHandDrag()
                 }
             }
+    }
+    
+    private func handleSelectorDrag(_ value: DragGesture.Value) {
+        isSelectionActive = true
+        let rect = CGRect(
+            origin: value.startLocation,
+            size: CGSize(
+                width: value.location.x - value.startLocation.x,
+                height: value.location.y - value.startLocation.y
+            )
+        )
+        selectionPath = Path { path in
+            path.addRect(rect)
+        }
+        selectionBounds = rect
+    }
+    
+    private func handleHandDrag(_ value: DragGesture.Value) {
+        if dragStartLocation == nil {
+            initializeHandDrag(at: value.startLocation)
+        }
+        
+        if activeStrokeState != nil {
+            updateDrawingWithTransform(at: value.location)
+        }
+    }
+    
+    private func initializeHandDrag(at location: CGPoint) {
+        print("\n=== Starting Hand Drag ===")
+        dragStartLocation = location
+        originalDrawing = canvas.drawing
+        
+        let touchArea = CGRect(
+            x: location.x - 20,
+            y: location.y - 20,
+            width: 40,
+            height: 40
+        )
+        print("Touch area:", touchArea)
+        
+        // Find stroke under touch point
+        if let stroke = canvas.drawing.strokes.first(where: { $0.renderBounds.intersects(touchArea) }) {
+            let strokeCenter = CGPoint(
+                x: stroke.renderBounds.midX,
+                y: stroke.renderBounds.midY
+            )
+            let offset = CGPoint(
+                x: location.x - strokeCenter.x,
+                y: location.y - strokeCenter.y
+            )
+            
+            activeStrokeState = StrokeState(
+                stroke: stroke,
+                initialTransform: stroke.transform,
+                initialCenter: strokeCenter,
+                currentOffset: offset
+            )
+            
+            print("Selected stroke center:", strokeCenter)
+            print("Initial offset:", offset)
+        }
+    }
+    
+    private func updateDrawingWithTransform(at location: CGPoint) {
+        guard let state = activeStrokeState else { return }
+        
+        print("\n=== Updating Stroke Position ===")
+        var newDrawing = originalDrawing!
+        
+        // Remove the original stroke
+        newDrawing.strokes.removeAll { $0.renderBounds == state.stroke.renderBounds }
+        
+        // Calculate new position
+        let targetCenter = CGPoint(
+            x: location.x - state.currentOffset.x,
+            y: location.y - state.currentOffset.y
+        )
+        
+        let dx = targetCenter.x - state.initialCenter.x
+        let dy = targetCenter.y - state.initialCenter.y
+        
+        // Create transformed stroke
+        var transformedStroke = state.stroke
+        transformedStroke.transform = state.initialTransform.concatenating(
+            CGAffineTransform(translationX: dx, y: dy)
+        )
+        
+        newDrawing.strokes.append(transformedStroke)
+        print("Moving stroke to:", targetCenter)
+        
+        canvas.drawing = newDrawing
+    }
+    
+    private func resetHandDrag() {
+        print("\n=== Ending Hand Drag ===")
+        activeStrokeState = nil
+        dragStartLocation = nil
+        originalDrawing = nil
     }
     
     var body: some View {
@@ -345,29 +382,37 @@ struct ContentView: View {
     
     // Add this new function to handle copying
     private func copySelectedStrokes() {
-        // Get the strokes that are within the selection bounds
+        print("\n=== Copying Strokes ===")
         let selectedStrokes = canvas.drawing.strokes.filter { stroke in
             selectionBounds.contains(stroke.renderBounds)
         }
+        print("Selected strokes to copy:", selectedStrokes.count)
         
         if !selectedStrokes.isEmpty {
-            // Create a new drawing with the selected strokes
-            var newDrawing = PKDrawing()
+            var newDrawing = canvas.drawing
+            print("Original drawing strokes:", newDrawing.strokes.count)
             
-            // Calculate offset to place the copy
-            let offset = CGPoint(x: 20, y: 20)  // Offset by 20 points
-            
-            // Add each stroke with offset
+            // Add copied strokes with a small offset
+            let offset = CGPoint(x: 20, y: 20)
             for stroke in selectedStrokes {
                 var transformedStroke = stroke
-                transformedStroke.transform = transformedStroke.transform.concatenating(
+                transformedStroke.transform = stroke.transform.concatenating(
                     CGAffineTransform(translationX: offset.x, y: offset.y)
                 )
+                
+                // Create and store unique identifier for the new stroke
+                let identifier = StrokeIdentifier(
+                    bounds: transformedStroke.renderBounds,
+                    creationDate: Date(),
+                    id: UUID()
+                )
+                strokeIdentifiers[transformedStroke] = identifier
+                
                 newDrawing.strokes.append(transformedStroke)
+                print("Created copy with ID:", identifier.id)
             }
             
-            // Add the copied strokes to the canvas
-            canvas.drawing.append(newDrawing)
+            canvas.drawing = newDrawing
         }
     }
 }
@@ -727,4 +772,17 @@ struct ToolButton: View {
                 )
         }
     }
+}
+
+struct StrokeIdentifier: Hashable {
+    let bounds: CGRect
+    let creationDate: Date
+    let id: UUID  // Add a unique identifier
+}
+
+struct StrokeState {
+    let stroke: PKStroke
+    let initialTransform: CGAffineTransform
+    let initialCenter: CGPoint
+    var currentOffset: CGPoint
 }
