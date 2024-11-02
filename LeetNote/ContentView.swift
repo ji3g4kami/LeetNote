@@ -100,12 +100,26 @@ struct ContentView: View {
     @State private var isSelectionActive = false
     @State private var selectionBounds: CGRect = .zero
     @State private var showDataStructuresPanel = false
+    @State private var undoStack: [PKDrawing] = []
+    @State private var redoStack: [PKDrawing] = []
+    // Track the previous drawing state
+    @State private var previousDrawing: PKDrawing?
     
     var body: some View {
         ZStack {
-            CanvasView(canvas: $canvas, 
-                      tool: currentTool,
-                      undoManager: $undoManager)
+            CanvasView(
+                canvas: $canvas,
+                tool: currentTool,
+                undoManager: $undoManager,
+                onStrokeAdded: {
+                    // Save the previous state before updating
+                    if let prev = previousDrawing {
+                        undoStack.append(prev)
+                    }
+                    previousDrawing = canvas.drawing
+                    redoStack.removeAll()
+                }
+            )
                 .gesture(
                     currentTool == .selector ?
                     DragGesture()
@@ -140,7 +154,6 @@ struct ContentView: View {
                     
                     // Floating optimize button
                     Button(action: {
-                        optimizeSelection()
                         isSelectionActive = false
                         selectionPath = nil
                     }) {
@@ -184,16 +197,16 @@ struct ContentView: View {
                             ToolButton(
                                 icon: "arrow.uturn.backward",
                                 isSelected: false,
-                                action: { undoManager?.undo() }
+                                action: undo
                             )
-                            .disabled(!(undoManager?.canUndo ?? false))
+                            .disabled(undoStack.isEmpty)
                             
                             ToolButton(
                                 icon: "arrow.uturn.forward",
                                 isSelected: false,
-                                action: { undoManager?.redo() }
+                                action: redo
                             )
-                            .disabled(!(undoManager?.canRedo ?? false))
+                            .disabled(redoStack.isEmpty)
                         }
                         .padding()
                         .background(
@@ -228,38 +241,6 @@ struct ContentView: View {
         }
     }
     
-    private func optimizeSelection() {
-        guard let selectionPath = selectionPath else { return }
-        
-        let selectedStrokes = canvas.drawing.strokes.filter { stroke in
-            stroke.renderBounds.intersects(selectionPath.boundingRect)
-        }
-        
-        // Create an image from the selected strokes
-        let renderer = UIGraphicsImageRenderer(bounds: selectionPath.boundingRect)
-        let strokeImage = renderer.image { context in
-            let drawing = PKDrawing(strokes: selectedStrokes)
-            drawing.image(from: selectionPath.boundingRect, scale: 1.0).draw(in: selectionPath.boundingRect)
-        }
-        
-        // Perform shape recognition using Vision
-        recognizeShape(from: strokeImage) { recognizedType in
-            let bounds = selectionPath.boundingRect
-            let element = RecognizedElement(
-                type: recognizedType,
-                bounds: bounds,
-                content: "1,2,3", // This should come from text recognition
-                originalStrokes: selectedStrokes
-            )
-            
-            recognizedElements.append(element)
-            
-            // Remove the selected strokes from the canvas
-            canvas.drawing.strokes.removeAll { stroke in
-                selectedStrokes.contains(stroke)
-            }
-        }
-    }
     
     private func recognizeShape(from image: UIImage, completion: @escaping (ElementType) -> Void) {
         guard let cgImage = image.cgImage else {
@@ -303,6 +284,25 @@ struct ContentView: View {
         // Implementation for shape recognition
         // This would use Vision framework or custom ML model
     }
+    
+    // Add these undo/redo methods
+    private func undo() {
+        guard let previousDrawing = undoStack.popLast() else { return }
+        // Save current state to redo stack
+        redoStack.append(canvas.drawing)
+        // Restore the previous state
+        canvas.drawing = previousDrawing
+        self.previousDrawing = previousDrawing
+    }
+    
+    private func redo() {
+        guard let nextDrawing = redoStack.popLast() else { return }
+        // Save current state to undo stack
+        undoStack.append(canvas.drawing)
+        // Apply the next state
+        canvas.drawing = nextDrawing
+        previousDrawing = nextDrawing
+    }
 }
 
 // Canvas View
@@ -310,19 +310,29 @@ struct CanvasView: UIViewRepresentable {
     @Binding var canvas: PKCanvasView
     var tool: DrawingTool
     @Binding var undoManager: UndoManager?
+    var onStrokeAdded: () -> Void
     
     func makeUIView(context: Context) -> PKCanvasView {
         canvas.tool = PKInkingTool(.pen, color: .black, width: 1)
         canvas.drawingPolicy = .anyInput
-        
-        // Set up undo manager
-        canvas.undoManager?.registerUndo(withTarget: canvas) { canvas in
-            // Register undo action
-            canvas.drawing = canvas.drawing
-        }
-        undoManager = canvas.undoManager
-        
+        canvas.delegate = context.coordinator
         return canvas
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onStrokeAdded: onStrokeAdded)
+    }
+    
+    class Coordinator: NSObject, PKCanvasViewDelegate {
+        var onStrokeAdded: () -> Void
+        
+        init(onStrokeAdded: @escaping () -> Void) {
+            self.onStrokeAdded = onStrokeAdded
+        }
+        
+        func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+            onStrokeAdded()
+        }
     }
     
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
@@ -332,7 +342,6 @@ struct CanvasView: UIViewRepresentable {
         case .eraser:
             uiView.tool = PKEraserTool(.vector)
         case .selector:
-            // Disable drawing in selector mode
             uiView.tool = PKInkingTool(.pen, color: .clear, width: 0)
         }
     }
