@@ -100,25 +100,17 @@ struct ContentView: View {
     @State private var isSelectionActive = false
     @State private var selectionBounds: CGRect = .zero
     @State private var showDataStructuresPanel = false
-    @State private var undoStack: [PKDrawing] = []
-    @State private var redoStack: [PKDrawing] = []
     // Track the previous drawing state
     @State private var previousDrawing: PKDrawing?
+    // Add this property to track initial state
+    @State private var initialDrawing = PKDrawing()
     
     var body: some View {
         ZStack {
             CanvasView(
                 canvas: $canvas,
                 tool: currentTool,
-                undoManager: $undoManager,
-                onStrokeAdded: {
-                    // Save the previous state before updating
-                    if let prev = previousDrawing {
-                        undoStack.append(prev)
-                    }
-                    previousDrawing = canvas.drawing
-                    redoStack.removeAll()
-                }
+                undoManager: $undoManager
             )
                 .gesture(
                     currentTool == .selector ?
@@ -183,10 +175,6 @@ struct ContentView: View {
                     }
             }
             
-            if isOptimizing {
-                OptimizationPanel(element: $selectedElement, isShowing: $isOptimizing)
-            }
-            
             // Tool Selection Panel with Undo/Redo
             VStack {
                 Spacer()
@@ -197,16 +185,18 @@ struct ContentView: View {
                             ToolButton(
                                 icon: "arrow.uturn.backward",
                                 isSelected: false,
-                                action: undo
+                                action: {
+                                    canvas.undoManager?.undo()
+                                }
                             )
-                            .disabled(undoStack.isEmpty)
                             
                             ToolButton(
                                 icon: "arrow.uturn.forward",
                                 isSelected: false,
-                                action: redo
+                                action: {
+                                    canvas.undoManager?.redo()
+                                }
                             )
-                            .disabled(redoStack.isEmpty)
                         }
                         .padding()
                         .background(
@@ -238,6 +228,12 @@ struct ContentView: View {
                 
                 Spacer()
             }
+        }
+        .onAppear {
+            // Store initial empty state
+            initialDrawing = canvas.drawing
+            // Important: Set up the canvas when the view appears
+            canvas.becomeFirstResponder()
         }
     }
     
@@ -278,31 +274,6 @@ struct ContentView: View {
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
         try? handler.perform([request])
     }
-    
-    // Function to detect drawn elements
-    private func detectElements() {
-        // Implementation for shape recognition
-        // This would use Vision framework or custom ML model
-    }
-    
-    // Add these undo/redo methods
-    private func undo() {
-        guard let previousDrawing = undoStack.popLast() else { return }
-        // Save current state to redo stack
-        redoStack.append(canvas.drawing)
-        // Restore the previous state
-        canvas.drawing = previousDrawing
-        self.previousDrawing = previousDrawing
-    }
-    
-    private func redo() {
-        guard let nextDrawing = redoStack.popLast() else { return }
-        // Save current state to undo stack
-        undoStack.append(canvas.drawing)
-        // Apply the next state
-        canvas.drawing = nextDrawing
-        previousDrawing = nextDrawing
-    }
 }
 
 // Canvas View
@@ -310,39 +281,45 @@ struct CanvasView: UIViewRepresentable {
     @Binding var canvas: PKCanvasView
     var tool: DrawingTool
     @Binding var undoManager: UndoManager?
-    var onStrokeAdded: () -> Void
     
     func makeUIView(context: Context) -> PKCanvasView {
-        canvas.tool = PKInkingTool(.pen, color: .black, width: 1)
         canvas.drawingPolicy = .anyInput
+        canvas.tool = PKInkingTool(.pen)
+        
+        // Important: Set the delegate
         canvas.delegate = context.coordinator
+        
+        // Enable undo support
+        canvas.becomeFirstResponder()
+        
         return canvas
-    }
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onStrokeAdded: onStrokeAdded)
-    }
-    
-    class Coordinator: NSObject, PKCanvasViewDelegate {
-        var onStrokeAdded: () -> Void
-        
-        init(onStrokeAdded: @escaping () -> Void) {
-            self.onStrokeAdded = onStrokeAdded
-        }
-        
-        func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-            onStrokeAdded()
-        }
     }
     
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
         switch tool {
         case .pen:
-            uiView.tool = PKInkingTool(.pen, color: .black, width: 1)
+            uiView.tool = PKInkingTool(.pen)
         case .eraser:
             uiView.tool = PKEraserTool(.vector)
         case .selector:
-            uiView.tool = PKInkingTool(.pen, color: .clear, width: 0)
+            break
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, PKCanvasViewDelegate {
+        var parent: CanvasView
+        
+        init(_ parent: CanvasView) {
+            self.parent = parent
+        }
+        
+        func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+            // This ensures the undo manager is properly updated
+            parent.undoManager = canvasView.undoManager
         }
     }
 }
