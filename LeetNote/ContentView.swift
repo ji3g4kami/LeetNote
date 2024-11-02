@@ -42,6 +42,52 @@ extension PKStroke: @retroactive Hashable {
     }
 }
 
+// Add this new enum
+enum DataStructureType {
+    case array
+    case tree
+    case linkedList
+}
+
+// Add this new panel view
+struct DataStructuresPanel: View {
+    var onSelect: (DataStructureType) -> Void
+    
+    var body: some View {
+        VStack {
+            Text("Data Structures")
+                .font(.headline)
+                .padding(.bottom)
+            
+            Button(action: { onSelect(.array) }) {
+                HStack {
+                    Image(systemName: "rectangle.split.3.horizontal")
+                    Text("Array")
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(8)
+            }
+            
+            Button(action: { onSelect(.tree) }) {
+                HStack {
+                    Image(systemName: "triangle")
+                    Text("Tree")
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(8)
+            }
+        }
+        .padding()
+        .background(Color(UIColor.systemBackground))
+        .cornerRadius(12)
+        .shadow(radius: 5)
+    }
+}
+
 // Main View
 struct ContentView: View {
     @State private var canvas = PKCanvasView()
@@ -53,6 +99,7 @@ struct ContentView: View {
     @State private var undoManager: UndoManager?
     @State private var isSelectionActive = false
     @State private var selectionBounds: CGRect = .zero
+    @State private var showDataStructuresPanel = false
     
     var body: some View {
         ZStack {
@@ -159,6 +206,24 @@ struct ContentView: View {
                     }
                     .padding()
                 }
+            }
+            
+            // Data Structures Panel
+            VStack {
+                DataStructuresPanel { type in
+                    // Create new data structure
+                    let element = RecognizedElement(
+                        type: type == .array ? .array : .tree,
+                        bounds: CGRect(x: 100, y: 100, width: 200, height: 50),
+                        content: "",
+                        originalStrokes: []
+                    )
+                    recognizedElements.append(element)
+                }
+                .frame(width: 200)
+                .padding()
+                
+                Spacer()
             }
         }
     }
@@ -293,19 +358,81 @@ struct RecognizedElementView: View {
 
 // Array View
 struct ArrayView: View {
-    let content: String
+    @State private var position: CGPoint = CGPoint(x: UIScreen.main.bounds.width/2, y: UIScreen.main.bounds.height/2)
+    @State private var values: [String]
+    
+    init(content: String) {
+        _values = State(initialValue: content.components(separatedBy: ","))
+    }
     
     var body: some View {
-        HStack(spacing: 1) {
-            ForEach(content.components(separatedBy: ","), id: \.self) { value in
-                Rectangle()
-                    .stroke(Color.black, lineWidth: 1)
-                    .overlay(
-                        Text(value.trimmingCharacters(in: .whitespaces))
-                    )
-                    .frame(width: 40, height: 40)
+        let dragGesture = DragGesture()
+            .onChanged { value in
+                self.position = CGPoint(
+                    x: value.location.x,
+                    y: value.location.y
+                )
             }
+        
+        return HStack(spacing: 1) {
+            // Front controls
+            VStack(spacing: 4) {
+                // Delete button
+                Button(action: {
+                    if !values.isEmpty {
+                        values.removeFirst()
+                    }
+                }) {
+                    Image(systemName: "minus.circle.fill")
+                        .foregroundColor(.red)
+                }
+                // Add button
+                Button(action: { values.insert("", at: 0) }) {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundColor(.blue)
+                }
+            }
+            .offset(x: 10)
+            .zIndex(1)
+            
+            // Array cells
+            HStack(spacing: 1) {
+                ForEach(values.indices, id: \.self) { index in
+                    Rectangle()
+                        .stroke(Color.black, lineWidth: 1)
+                        .overlay(
+                            TextField("", text: Binding(
+                                get: { values[index] },
+                                set: { values[index] = $0 }
+                            ))
+                            .multilineTextAlignment(.center)
+                        )
+                        .frame(width: 40, height: 40)
+                }
+            }
+            
+            // Back controls
+            VStack(spacing: 4) {
+                // Delete button
+                Button(action: {
+                    if !values.isEmpty {
+                        values.removeLast()
+                    }
+                }) {
+                    Image(systemName: "minus.circle.fill")
+                        .foregroundColor(.red)
+                }
+                // Add button
+                Button(action: { values.append("") }) {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundColor(.blue)
+                }
+            }
+            .offset(x: -10)
+            .zIndex(1)
         }
+        .position(x: position.x, y: position.y)
+        .gesture(dragGesture)
     }
 }
 
