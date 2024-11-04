@@ -100,147 +100,143 @@ struct ContentView: View {
     @State private var isSelectionActive = false
     @State private var selectionBounds: CGRect = .zero
     @State private var showDataStructuresPanel = false
-    // Track the previous drawing state
     @State private var previousDrawing: PKDrawing?
-    // Add this property to track initial state
     @State private var initialDrawing = PKDrawing()
-    // Add these properties
     @State private var draggedStrokes: [(stroke: PKStroke, initialTransform: CGAffineTransform)] = []
     @State private var dragStartLocation: CGPoint?
-    @State private var originalDrawing: PKDrawing?  // Add this to store original drawing
+    @State private var originalDrawing: PKDrawing?
     @State private var previousLocation: CGPoint?
     @State private var dragOffset: CGPoint?
     @State private var strokeIdentifiers: [PKStroke: StrokeIdentifier] = [:]
     @State private var activeStrokeState: StrokeState?
     
     var dragGesture: some Gesture {
-        DragGesture()
-            .onChanged { value in
-                if currentTool == .selector {
-                    handleSelectorDrag(value)
-                } else if currentTool == .hand {
-                    handleHandDrag(value)
-                }
-            }
-            .onEnded { value in
-                if currentTool == .hand {
-                    resetHandDrag()
-                } else if currentTool == .selector {
-                    // Only keep selection if it's larger than a minimum size
-                    let size = CGSize(
-                        width: abs(value.location.x - value.startLocation.x),
-                        height: abs(value.location.y - value.startLocation.y)
-                    )
-                    if size.width < 5 && size.height < 5 {
-                        clearSelection()
+            DragGesture()
+                .onChanged { value in
+                    if currentTool == .selector {
+                        handleSelectorDrag(value)
+                    } else if currentTool == .hand {
+                        handleHandDrag(value)
                     }
                 }
-            }
-    }
+                .onEnded { value in
+                    if currentTool == .hand {
+                        resetHandDrag()
+                    } else if currentTool == .selector {
+                        // Only keep selection if it's larger than a minimum size
+                        let size = CGSize(
+                            width: abs(value.location.x - value.startLocation.x),
+                            height: abs(value.location.y - value.startLocation.y)
+                        )
+                        if size.width < 5 && size.height < 5 {
+                            clearSelection()
+                        }
+                    }
+                }
+        }
 
-    
-    private func handleSelectorDrag(_ value: DragGesture.Value) {
-        isSelectionActive = true
-        let rect = CGRect(
-            origin: value.startLocation,
-            size: CGSize(
-                width: value.location.x - value.startLocation.x,
-                height: value.location.y - value.startLocation.y
+        private func handleSelectorDrag(_ value: DragGesture.Value) {
+            isSelectionActive = true
+            let rect = CGRect(
+                origin: value.startLocation,
+                size: CGSize(
+                    width: value.location.x - value.startLocation.x,
+                    height: value.location.y - value.startLocation.y
+                )
             )
-        )
-        selectionPath = Path { path in
-            path.addRect(rect)
-        }
-        selectionBounds = rect
-    }
-    
-    private func handleHandDrag(_ value: DragGesture.Value) {
-        if dragStartLocation == nil {
-            initializeHandDrag(at: value.startLocation)
+            selectionPath = Path { path in
+                path.addRect(rect)
+            }
+            selectionBounds = rect
         }
         
-        if activeStrokeState != nil {
-            updateDrawingWithTransform(at: value.location)
+        private func handleHandDrag(_ value: DragGesture.Value) {
+            if dragStartLocation == nil {
+                initializeHandDrag(at: value.startLocation)
+            }
+            
+            if activeStrokeState != nil {
+                updateDrawingWithTransform(at: value.location)
+            }
         }
-    }
-    
-    private func initializeHandDrag(at location: CGPoint) {
-        print("\n=== Starting Hand Drag ===")
-        dragStartLocation = location
-        originalDrawing = canvas.drawing
         
-        let touchArea = CGRect(
-            x: location.x - 20,
-            y: location.y - 20,
-            width: 40,
-            height: 40
-        )
-        print("Touch area:", touchArea)
-        
-        // Find stroke under touch point
-        if let stroke = canvas.drawing.strokes.first(where: { $0.renderBounds.intersects(touchArea) }) {
-            let strokeCenter = CGPoint(
-                x: stroke.renderBounds.midX,
-                y: stroke.renderBounds.midY
+        private func resetHandDrag() {
+            print("\n=== Ending Hand Drag ===")
+            activeStrokeState = nil
+            dragStartLocation = nil
+            originalDrawing = nil
+        }
+
+        private func initializeHandDrag(at location: CGPoint) {
+            print("\n=== Starting Hand Drag ===")
+            dragStartLocation = location
+            originalDrawing = canvas.drawing
+            
+            let touchArea = CGRect(
+                x: location.x - 20,
+                y: location.y - 20,
+                width: 40,
+                height: 40
             )
-            let offset = CGPoint(
-                x: location.x - strokeCenter.x,
-                y: location.y - strokeCenter.y
+            print("Touch area:", touchArea)
+            
+            // Find stroke under touch point
+            if let stroke = canvas.drawing.strokes.first(where: { $0.renderBounds.intersects(touchArea) }) {
+                let strokeCenter = CGPoint(
+                    x: stroke.renderBounds.midX,
+                    y: stroke.renderBounds.midY
+                )
+                let offset = CGPoint(
+                    x: location.x - strokeCenter.x,
+                    y: location.y - strokeCenter.y
+                )
+                
+                activeStrokeState = StrokeState(
+                    stroke: stroke,
+                    initialTransform: stroke.transform,
+                    initialCenter: strokeCenter,
+                    currentOffset: offset
+                )
+                
+                print("Selected stroke center:", strokeCenter)
+                print("Initial offset:", offset)
+            }
+        }
+        
+        private func updateDrawingWithTransform(at location: CGPoint) {
+            guard let state = activeStrokeState else { return }
+            
+            print("\n=== Updating Stroke Position ===")
+            var newDrawing = originalDrawing!
+            
+            // Remove the original stroke
+            newDrawing.strokes.removeAll { $0.renderBounds == state.stroke.renderBounds }
+            
+            // Calculate new position
+            let targetCenter = CGPoint(
+                x: location.x - state.currentOffset.x,
+                y: location.y - state.currentOffset.y
             )
             
-            activeStrokeState = StrokeState(
-                stroke: stroke,
-                initialTransform: stroke.transform,
-                initialCenter: strokeCenter,
-                currentOffset: offset
+            let dx = targetCenter.x - state.initialCenter.x
+            let dy = targetCenter.y - state.initialCenter.y
+            
+            // Create transformed stroke
+            var transformedStroke = state.stroke
+            transformedStroke.transform = state.initialTransform.concatenating(
+                CGAffineTransform(translationX: dx, y: dy)
             )
             
-            print("Selected stroke center:", strokeCenter)
-            print("Initial offset:", offset)
+            newDrawing.strokes.append(transformedStroke)
+            print("Moving stroke to:", targetCenter)
+            
+            canvas.drawing = newDrawing
         }
-    }
-    
-    private func updateDrawingWithTransform(at location: CGPoint) {
-        guard let state = activeStrokeState else { return }
-        
-        print("\n=== Updating Stroke Position ===")
-        var newDrawing = originalDrawing!
-        
-        // Remove the original stroke
-        newDrawing.strokes.removeAll { $0.renderBounds == state.stroke.renderBounds }
-        
-        // Calculate new position
-        let targetCenter = CGPoint(
-            x: location.x - state.currentOffset.x,
-            y: location.y - state.currentOffset.y
-        )
-        
-        let dx = targetCenter.x - state.initialCenter.x
-        let dy = targetCenter.y - state.initialCenter.y
-        
-        // Create transformed stroke
-        var transformedStroke = state.stroke
-        transformedStroke.transform = state.initialTransform.concatenating(
-            CGAffineTransform(translationX: dx, y: dy)
-        )
-        
-        newDrawing.strokes.append(transformedStroke)
-        print("Moving stroke to:", targetCenter)
-        
-        canvas.drawing = newDrawing
-    }
-    
-    private func resetHandDrag() {
-        print("\n=== Ending Hand Drag ===")
-        activeStrokeState = nil
-        dragStartLocation = nil
-        originalDrawing = nil
-    }
-    
+
     var body: some View {
         ZStack {
-            Color.clear  // Add this transparent background
-                .contentShape(Rectangle())  // Make it tappable
+            Color.clear
+                .contentShape(Rectangle())
                 .onTapGesture {
                     if currentTool == .selector {
                         clearSelection()
@@ -254,10 +250,8 @@ struct ContentView: View {
             )
             .gesture(currentTool == .pen || currentTool == .eraser ? nil : dragGesture)
 
-            // Selection path view with floating button
             if let path = selectionPath, isSelectionActive {
                 ZStack {
-                    // Selection rectangle
                     path.stroke(style: StrokeStyle(
                         lineWidth: 2,
                         dash: [5],
@@ -265,13 +259,12 @@ struct ContentView: View {
                     ))
                     .foregroundColor(.blue)
                     
-                    // Changed to copy button
                     Button(action: {
                         copySelectedStrokes()
                         isSelectionActive = false
                         selectionPath = nil
                     }) {
-                        Image(systemName: "doc.on.doc")  // Changed icon to copy symbol
+                        Image(systemName: "doc.on.doc")
                             .font(.system(size: 20))
                             .foregroundColor(.white)
                             .padding(12)
@@ -286,7 +279,6 @@ struct ContentView: View {
                 }
             }
             
-            // Overlay for recognized elements
             ForEach(recognizedElements.indices, id: \.self) { index in
                 RecognizedElementView(element: $recognizedElements[index])
                     .onTapGesture {
@@ -296,7 +288,6 @@ struct ContentView: View {
                     }
             }
             
-            // Tool Selection Panel with Undo/Redo
             VStack {
                 Spacer()
                 HStack {
@@ -326,29 +317,23 @@ struct ContentView: View {
                                 .shadow(radius: 5)
                         )
                         
-                        // In ContentView's body
                         ToolSelectionPanel(
                             currentTool: $currentTool,
                             onToolChange: {
                                 clearSelection()
                             }
                         )
-
                     }
                     .padding()
                 }
             }
             
-            // Data Structures Panel
             VStack {
                 DataStructuresPanel { type in
-                    // Create new data structure
-                    // In ContentView where you create new elements:
-                    // In ContentView where you create new elements:
                     let element = RecognizedElement(
                         type: type == .array ? .array : .tree,
                         bounds: CGRect(x: 100, y: 100, width: 200, height: 50),
-                        content: "",
+                        content: type == .array ? "" : "",
                         originalStrokes: [],
                         position: CGPoint(x: UIScreen.main.bounds.width/2, y: UIScreen.main.bounds.height/2)
                     )
@@ -361,19 +346,18 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            // Store initial empty state
             initialDrawing = canvas.drawing
-            // Important: Set up the canvas when the view appears
             canvas.becomeFirstResponder()
         }
     }
     
-    // Add this new function to handle copying
+    // ... (keep all other methods like handleSelectorDrag, handleHandDrag, etc.)
+
     private func copySelectedStrokes() {
         print("\n=== Copying Elements ===")
         print("Selection bounds:", selectionBounds)
         
-        // 1. Copy strokes
+        // Copy strokes
         let selectedStrokes = canvas.drawing.strokes.filter { stroke in
             selectionBounds.contains(stroke.renderBounds)
         }
@@ -383,7 +367,6 @@ struct ContentView: View {
             var newDrawing = canvas.drawing
             print("Original drawing strokes:", newDrawing.strokes.count)
             
-            // Add copied strokes with a small offset
             let offset = CGPoint(x: 20, y: 20)
             for stroke in selectedStrokes {
                 var transformedStroke = stroke
@@ -405,7 +388,7 @@ struct ContentView: View {
             canvas.drawing = newDrawing
         }
         
-        // 2. Copy recognized elements (arrays, trees, etc.)
+        // Copy recognized elements
         let selectedElements = recognizedElements.filter { element in
             let elementFrame = CGRect(
                 x: element.position.x - element.bounds.width/2,
@@ -417,7 +400,7 @@ struct ContentView: View {
             print("Checking element at position:", element.position)
             print("Element frame:", elementFrame)
             print("Intersects with selection:", intersects)
-            print("Original content:", element.content) // Add this debug line
+            print("Original content:", element.content)
             return intersects
         }
         
@@ -430,11 +413,10 @@ struct ContentView: View {
                 y: element.position.y + offset.y
             )
             
-            // Create new element with the same content
             let newElement = RecognizedElement(
                 type: element.type,
                 bounds: element.bounds,
-                content: element.content, // Just copy the original content directly
+                content: element.content,
                 originalStrokes: element.originalStrokes,
                 position: newPosition
             )
@@ -452,6 +434,7 @@ struct ContentView: View {
     }
 }
 
+
 // Canvas View
 struct CanvasView: UIViewRepresentable {
     @Binding var canvas: PKCanvasView
@@ -461,26 +444,22 @@ struct CanvasView: UIViewRepresentable {
     func makeUIView(context: Context) -> PKCanvasView {
         canvas.drawingPolicy = .anyInput
         canvas.tool = PKInkingTool(.pen)
-        
-        // Important: Set the delegate
         canvas.delegate = context.coordinator
-        
-        // Enable undo support
         canvas.becomeFirstResponder()
-        
         return canvas
     }
     
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
         switch tool {
         case .pen:
+            uiView.drawingPolicy = .anyInput
             uiView.tool = PKInkingTool(.pen)
         case .eraser:
+            uiView.drawingPolicy = .anyInput
             uiView.tool = PKEraserTool(.vector)
-        case .selector:
-            break
-        case .hand:
-            break
+        case .selector, .hand:
+            // Use pencilOnly to restrict drawing while maintaining interaction
+            uiView.drawingPolicy = .pencilOnly
         }
     }
     
@@ -496,11 +475,11 @@ struct CanvasView: UIViewRepresentable {
         }
         
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-            // This ensures the undo manager is properly updated
             parent.undoManager = canvasView.undoManager
         }
     }
 }
+
 
 // View for optimized elements
 struct RecognizedElementView: View {
@@ -535,7 +514,7 @@ struct ArrayView: View {
     
     init(content: String, initialPosition: CGPoint, onContentChanged: @escaping (String) -> Void) {
         _position = State(initialValue: initialPosition)
-        _values = State(initialValue: content.isEmpty ? [] : content.components(separatedBy: ","))
+        _values = State(initialValue: content.isEmpty ? [""] : content.components(separatedBy: ","))
         self.onContentChanged = onContentChanged
     }
     
