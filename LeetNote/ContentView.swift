@@ -1,33 +1,26 @@
 import SwiftUI
 import PencilKit
 
-// Main data structure for recognized shapes
 struct RecognizedElement: Identifiable {
     let id = UUID()
     var type: ElementType
     var bounds: CGRect
     var content: String
     var originalStrokes: [PKStroke]
-    var position: CGPoint // Add this
+    var position: CGPoint
 }
 
-// Types of elements that can be recognized
 enum ElementType {
     case array
-    case tree
-    case linkedList
-    case text
 }
 
-// Add this enum at the top level
 enum DrawingTool {
     case pen
     case eraser
     case selector
-    case hand  // New tool for moving strokes
+    case hand
 }
 
-// Add this extension at the top level of your file, near other structs/enums
 extension PKStroke: @retroactive Equatable {}
 extension PKStroke: @retroactive Hashable {
     public func hash(into hasher: inout Hasher) {
@@ -43,16 +36,12 @@ extension PKStroke: @retroactive Hashable {
     }
 }
 
-// Add this new enum
 enum DataStructureType {
     case array
-    case tree
-    case linkedList
 }
 
-// Add this new panel view
 struct DataStructuresPanel: View {
-    var onSelect: (DataStructureType) -> Void
+    var onSelect: (ElementType) -> Void
     
     var body: some View {
         VStack {
@@ -62,19 +51,7 @@ struct DataStructuresPanel: View {
             
             Button(action: { onSelect(.array) }) {
                 HStack {
-                    Image(systemName: "rectangle.split.3.horizontal")
                     Text("Array")
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(8)
-            }
-            
-            Button(action: { onSelect(.tree) }) {
-                HStack {
-                    Image(systemName: "triangle")
-                    Text("Tree")
                 }
                 .frame(maxWidth: .infinity)
                 .padding()
@@ -89,7 +66,6 @@ struct DataStructuresPanel: View {
     }
 }
 
-// Main View
 struct ContentView: View {
     @State private var canvas = PKCanvasView()
     @State private var recognizedElements: [RecognizedElement] = []
@@ -331,9 +307,9 @@ struct ContentView: View {
             VStack {
                 DataStructuresPanel { type in
                     let element = RecognizedElement(
-                        type: type == .array ? .array : .tree,
+                        type: type,
                         bounds: CGRect(x: 100, y: 100, width: 200, height: 50),
-                        content: type == .array ? "" : "",
+                        content: "",
                         originalStrokes: [],
                         position: CGPoint(x: UIScreen.main.bounds.width/2, y: UIScreen.main.bounds.height/2)
                     )
@@ -492,7 +468,6 @@ struct CanvasView: UIViewRepresentable {
 }
 
 
-// View for optimized elements
 struct RecognizedElementView: View {
     @Binding var element: RecognizedElement
     
@@ -507,12 +482,6 @@ struct RecognizedElementView: View {
                 },
                 element: $element
             )
-        case .tree:
-            TreeView(content: element.content)
-        case .linkedList:
-            LinkedListView(content: element.content)
-        case .text:
-            Text(element.content)
         }
     }
 }
@@ -616,157 +585,7 @@ struct ArrayView: View {
         .gesture(dragGesture)
     }
 }
-// Optimization Panel
-struct OptimizationPanel: View {
-    @Binding var element: RecognizedElement?
-    @Binding var isShowing: Bool
-    
-    var body: some View {
-        VStack {
-            Text("Optimize Element")
-                .font(.headline)
-            
-            Picker("Element Type", selection: .constant(0)) {
-                Text("Array").tag(0)
-                Text("Tree").tag(1)
-                Text("Linked List").tag(2)
-                Text("Text").tag(3)
-            }
-            .pickerStyle(SegmentedPickerStyle())
-            
-            TextField("Content", text: .constant(""))
-            
-            HStack {
-                Button("Apply") {
-                    // Apply optimization
-                    isShowing = false
-                }
-                
-                Button("Cancel") {
-                    isShowing = false
-                }
-            }
-        }
-        .padding()
-        .background(Color.white)
-        .cornerRadius(10)
-        .shadow(radius: 5)
-    }
-}
 
-
-struct TreeView: View {
-    let content: String
-    
-    var body: some View {
-        GeometryReader { geometry in
-            let nodeSize: CGFloat = 40
-            let levelHeight: CGFloat = 60
-            let values = content.components(separatedBy: ",")
-            
-            ZStack {
-                // Draw nodes
-                ForEach(0..<values.count, id: \.self) { index in
-                    let level = Int(log2(Double(index + 1)))
-                    let nodesInLevel = pow(2.0, Double(level))
-                    let horizontalSpacing = geometry.size.width / (nodesInLevel + 1)
-                    let positionInLevel = Double(index + 1) - pow(2.0, Double(level)) + 1
-                    
-                    // Node
-                    Circle()
-                        .stroke(Color.black, lineWidth: 1)
-                        .frame(width: nodeSize, height: nodeSize)
-                        .overlay(
-                            Text(values[index].trimmingCharacters(in: .whitespaces))
-                        )
-                        .position(
-                            x: horizontalSpacing * CGFloat(positionInLevel),
-                            y: CGFloat(level) * levelHeight + nodeSize
-                        )
-                    
-                    // Draw lines to children
-                    if 2 * index + 1 < values.count {  // Left child
-                        let childLevel = level + 1
-                        let childNodesInLevel = pow(2.0, Double(childLevel))
-                        let childSpacing = geometry.size.width / (childNodesInLevel + 1)
-                        let childPosition = Double(2 * index + 1 + 1) - pow(2.0, Double(childLevel)) + 1
-                        
-                        Path { path in
-                            path.move(to: CGPoint(
-                                x: horizontalSpacing * CGFloat(positionInLevel),
-                                y: CGFloat(level) * levelHeight + nodeSize
-                            ))
-                            path.addLine(to: CGPoint(
-                                x: childSpacing * CGFloat(childPosition),
-                                y: CGFloat(childLevel) * levelHeight + nodeSize
-                            ))
-                        }
-                        .stroke(Color.black, lineWidth: 1)
-                    }
-                    
-                    if 2 * index + 2 < values.count {  // Right child
-                        let childLevel = level + 1
-                        let childNodesInLevel = pow(2.0, Double(childLevel))
-                        let childSpacing = geometry.size.width / (childNodesInLevel + 1)
-                        let childPosition = Double(2 * index + 2 + 1) - pow(2.0, Double(childLevel)) + 1
-                        
-                        Path { path in
-                            path.move(to: CGPoint(
-                                x: horizontalSpacing * CGFloat(positionInLevel),
-                                y: CGFloat(level) * levelHeight + nodeSize
-                            ))
-                            path.addLine(to: CGPoint(
-                                x: childSpacing * CGFloat(childPosition),
-                                y: CGFloat(childLevel) * levelHeight + nodeSize
-                            ))
-                        }
-                        .stroke(Color.black, lineWidth: 1)
-                    }
-                }
-            }
-        }
-        .frame(height: 300)  // Adjust based on your needs
-    }
-}
-
-struct LinkedListView: View {
-    let content: String
-    
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 20) {
-                ForEach(Array(content.components(separatedBy: ",").enumerated()), id: \.0) { index, value in
-                    HStack(spacing: 0) {
-                        // Node
-                        Circle()
-                            .stroke(Color.black, lineWidth: 1)
-                            .frame(width: 40, height: 40)
-                            .overlay(
-                                Text(value.trimmingCharacters(in: .whitespaces))
-                            )
-                        
-                        // Arrow
-                        if index < content.components(separatedBy: ",").count - 1 {
-                            Path { path in
-                                path.move(to: CGPoint(x: 0, y: 20))
-                                path.addLine(to: CGPoint(x: 20, y: 20))
-                                // Arrow head
-                                path.move(to: CGPoint(x: 15, y: 15))
-                                path.addLine(to: CGPoint(x: 20, y: 20))
-                                path.addLine(to: CGPoint(x: 15, y: 25))
-                            }
-                            .stroke(Color.black, lineWidth: 1)
-                            .frame(width: 20, height: 40)
-                        }
-                    }
-                }
-            }
-            .padding()
-        }
-    }
-}
-
-// Add this new view
 struct ToolSelectionPanel: View {
     @Binding var currentTool: DrawingTool
     var onToolChange: () -> Void  // Add this callback
@@ -818,8 +637,6 @@ struct ToolSelectionPanel: View {
     }
 }
 
-
-// Add this helper view
 struct ToolButton: View {
     let icon: String
     let isSelected: Bool
@@ -842,7 +659,7 @@ struct ToolButton: View {
 struct StrokeIdentifier: Hashable {
     let bounds: CGRect
     let creationDate: Date
-    let id: UUID  // Add a unique identifier
+    let id: UUID
 }
 
 struct StrokeState {
