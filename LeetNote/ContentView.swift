@@ -122,12 +122,22 @@ struct ContentView: View {
                     handleHandDrag(value)
                 }
             }
-            .onEnded { _ in
+            .onEnded { value in
                 if currentTool == .hand {
                     resetHandDrag()
+                } else if currentTool == .selector {
+                    // Only keep selection if it's larger than a minimum size
+                    let size = CGSize(
+                        width: abs(value.location.x - value.startLocation.x),
+                        height: abs(value.location.y - value.startLocation.y)
+                    )
+                    if size.width < 5 && size.height < 5 {
+                        clearSelection()
+                    }
                 }
             }
     }
+
     
     private func handleSelectorDrag(_ value: DragGesture.Value) {
         isSelectionActive = true
@@ -229,13 +239,21 @@ struct ContentView: View {
     
     var body: some View {
         ZStack {
+            Color.clear  // Add this transparent background
+                .contentShape(Rectangle())  // Make it tappable
+                .onTapGesture {
+                    if currentTool == .selector {
+                        clearSelection()
+                    }
+                }
+            
             CanvasView(
                 canvas: $canvas,
                 tool: currentTool,
                 undoManager: $undoManager
             )
             .gesture(currentTool == .pen || currentTool == .eraser ? nil : dragGesture)
-            
+
             // Selection path view with floating button
             if let path = selectionPath, isSelectionActive {
                 ZStack {
@@ -308,7 +326,14 @@ struct ContentView: View {
                                 .shadow(radius: 5)
                         )
                         
-                        ToolSelectionPanel(currentTool: $currentTool)
+                        // In ContentView's body
+                        ToolSelectionPanel(
+                            currentTool: $currentTool,
+                            onToolChange: {
+                                clearSelection()
+                            }
+                        )
+
                     }
                     .padding()
                 }
@@ -419,9 +444,12 @@ struct ContentView: View {
             recognizedElements.append(newElement)
         }
     }
-
-
-
+    
+    private func clearSelection() {
+        isSelectionActive = false
+        selectionPath = nil
+        selectionBounds = .zero
+    }
 }
 
 // Canvas View
@@ -747,31 +775,44 @@ struct LinkedListView: View {
 // Add this new view
 struct ToolSelectionPanel: View {
     @Binding var currentTool: DrawingTool
+    var onToolChange: () -> Void  // Add this callback
     
     var body: some View {
         HStack(spacing: 16) {
             ToolButton(
                 icon: "pencil",
                 isSelected: currentTool == .pen,
-                action: { currentTool = .pen }
+                action: {
+                    currentTool = .pen
+                    onToolChange()
+                }
             )
             
             ToolButton(
                 icon: "eraser",
                 isSelected: currentTool == .eraser,
-                action: { currentTool = .eraser }
+                action: {
+                    currentTool = .eraser
+                    onToolChange()
+                }
             )
             
             ToolButton(
                 icon: "lasso",
                 isSelected: currentTool == .selector,
-                action: { currentTool = .selector }
+                action: {
+                    currentTool = .selector
+                    onToolChange()
+                }
             )
             
             ToolButton(
-                icon: "hand.draw",  // or "hand.tap" depending on your preference
+                icon: "hand.draw",
                 isSelected: currentTool == .hand,
-                action: { currentTool = .hand }
+                action: {
+                    currentTool = .hand
+                    onToolChange()
+                }
             )
         }
         .padding()
@@ -782,6 +823,7 @@ struct ToolSelectionPanel: View {
         )
     }
 }
+
 
 // Add this helper view
 struct ToolButton: View {
