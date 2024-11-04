@@ -388,7 +388,14 @@ struct ContentView: View {
             canvas.drawing = newDrawing
         }
         
-        // Copy recognized elements
+        // Modified selection logic for elements
+        let normalizedSelectionBounds = CGRect(
+            x: min(selectionBounds.minX, selectionBounds.maxX),
+            y: min(selectionBounds.minY, selectionBounds.maxY),
+            width: abs(selectionBounds.width),
+            height: abs(selectionBounds.height)
+        )
+        
         let selectedElements = recognizedElements.filter { element in
             let elementFrame = CGRect(
                 x: element.position.x - element.bounds.width/2,
@@ -396,12 +403,16 @@ struct ContentView: View {
                 width: element.bounds.width,
                 height: element.bounds.height
             )
-            let intersects = elementFrame.intersects(selectionBounds)
+            
+            // Check if the element's center is within the selection bounds
+            let elementCenter = CGPoint(x: element.position.x, y: element.position.y)
+            let containsCenter = normalizedSelectionBounds.contains(elementCenter)
+            
             print("Checking element at position:", element.position)
             print("Element frame:", elementFrame)
-            print("Intersects with selection:", intersects)
+            print("Contains center:", containsCenter)
             print("Original content:", element.content)
-            return intersects
+            return containsCenter
         }
         
         print("Selected elements to copy:", selectedElements.count)
@@ -493,7 +504,8 @@ struct RecognizedElementView: View {
                 initialPosition: element.position,
                 onContentChanged: { newContent in
                     element.content = newContent
-                }
+                },
+                element: $element
             )
         case .tree:
             TreeView(content: element.content)
@@ -511,11 +523,13 @@ struct ArrayView: View {
     @State private var position: CGPoint
     @State private var values: [String]
     let onContentChanged: (String) -> Void
+    @Binding var element: RecognizedElement
     
-    init(content: String, initialPosition: CGPoint, onContentChanged: @escaping (String) -> Void) {
+    init(content: String, initialPosition: CGPoint, onContentChanged: @escaping (String) -> Void, element: Binding<RecognizedElement>) {
         _position = State(initialValue: initialPosition)
         _values = State(initialValue: content.isEmpty ? [""] : content.components(separatedBy: ","))
         self.onContentChanged = onContentChanged
+        _element = element
     }
     
     private func updateContent() {
@@ -530,6 +544,7 @@ struct ArrayView: View {
                     x: value.location.x,
                     y: value.location.y
                 )
+                element.position = self.position
             }
         
         return HStack(spacing: 1) {
