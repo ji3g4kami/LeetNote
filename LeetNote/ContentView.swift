@@ -1,6 +1,5 @@
 import SwiftUI
 import PencilKit
-import Vision
 
 // Main data structure for recognized shapes
 struct RecognizedElement: Identifiable {
@@ -9,6 +8,7 @@ struct RecognizedElement: Identifiable {
     var bounds: CGRect
     var content: String
     var originalStrokes: [PKStroke]
+    var position: CGPoint // Add this
 }
 
 // Types of elements that can be recognized
@@ -94,7 +94,6 @@ struct ContentView: View {
     @State private var canvas = PKCanvasView()
     @State private var recognizedElements: [RecognizedElement] = []
     @State private var selectedElement: RecognizedElement?
-    @State private var isOptimizing = false
     @State private var currentTool: DrawingTool = .pen
     @State private var selectionPath: Path?
     @State private var undoManager: UndoManager?
@@ -270,12 +269,11 @@ struct ContentView: View {
             }
             
             // Overlay for recognized elements
-            ForEach(recognizedElements) { element in
-                RecognizedElementView(element: element)
+            ForEach(recognizedElements.indices, id: \.self) { index in
+                RecognizedElementView(element: $recognizedElements[index])
                     .onTapGesture {
                         if currentTool == .selector {
-                            selectedElement = element
-                            isOptimizing = true
+                            selectedElement = recognizedElements[index]
                         }
                     }
             }
@@ -320,11 +318,14 @@ struct ContentView: View {
             VStack {
                 DataStructuresPanel { type in
                     // Create new data structure
+                    // In ContentView where you create new elements:
+                    // In ContentView where you create new elements:
                     let element = RecognizedElement(
                         type: type == .array ? .array : .tree,
                         bounds: CGRect(x: 100, y: 100, width: 200, height: 50),
                         content: "",
-                        originalStrokes: []
+                        originalStrokes: [],
+                        position: CGPoint(x: UIScreen.main.bounds.width/2, y: UIScreen.main.bounds.height/2)
                     )
                     recognizedElements.append(element)
                 }
@@ -342,47 +343,12 @@ struct ContentView: View {
         }
     }
     
-    
-    private func recognizeShape(from image: UIImage, completion: @escaping (ElementType) -> Void) {
-        guard let cgImage = image.cgImage else {
-            completion(.array) // Default fallback
-            return
-        }
-        
-        // Configure the request
-        let request = VNDetectRectanglesRequest { request, error in
-            guard let results = request.results as? [VNRectangleObservation] else {
-                completion(.array) // Default fallback
-                return
-            }
-            
-            // Analyze the detected rectangles
-            if results.count > 1 {
-                // Multiple rectangles might indicate an array
-                completion(.array)
-            } else if results.count == 1 {
-                // Single rectangle might be a tree node
-                completion(.tree)
-            } else {
-                // Default to array if unsure
-                completion(.array)
-            }
-        }
-        
-        // Configure request parameters
-        request.minimumAspectRatio = 0.3
-        request.maximumAspectRatio = 1.0
-        request.quadratureTolerance = 45
-        request.minimumSize = 0.2
-        request.maximumObservations = 10
-        
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        try? handler.perform([request])
-    }
-    
     // Add this new function to handle copying
     private func copySelectedStrokes() {
-        print("\n=== Copying Strokes ===")
+        print("\n=== Copying Elements ===")
+        print("Selection bounds:", selectionBounds)
+        
+        // 1. Copy strokes
         let selectedStrokes = canvas.drawing.strokes.filter { stroke in
             selectionBounds.contains(stroke.renderBounds)
         }
@@ -400,7 +366,6 @@ struct ContentView: View {
                     CGAffineTransform(translationX: offset.x, y: offset.y)
                 )
                 
-                // Create and store unique identifier for the new stroke
                 let identifier = StrokeIdentifier(
                     bounds: transformedStroke.renderBounds,
                     creationDate: Date(),
@@ -409,12 +374,54 @@ struct ContentView: View {
                 strokeIdentifiers[transformedStroke] = identifier
                 
                 newDrawing.strokes.append(transformedStroke)
-                print("Created copy with ID:", identifier.id)
+                print("Created stroke copy with ID:", identifier.id)
             }
             
             canvas.drawing = newDrawing
         }
+        
+        // 2. Copy recognized elements (arrays, trees, etc.)
+        let selectedElements = recognizedElements.filter { element in
+            let elementFrame = CGRect(
+                x: element.position.x - element.bounds.width/2,
+                y: element.position.y - element.bounds.height/2,
+                width: element.bounds.width,
+                height: element.bounds.height
+            )
+            let intersects = elementFrame.intersects(selectionBounds)
+            print("Checking element at position:", element.position)
+            print("Element frame:", elementFrame)
+            print("Intersects with selection:", intersects)
+            print("Original content:", element.content) // Add this debug line
+            return intersects
+        }
+        
+        print("Selected elements to copy:", selectedElements.count)
+        
+        for element in selectedElements {
+            let offset = CGPoint(x: 20, y: 20)
+            let newPosition = CGPoint(
+                x: element.position.x + offset.x,
+                y: element.position.y + offset.y
+            )
+            
+            // Create new element with the same content
+            let newElement = RecognizedElement(
+                type: element.type,
+                bounds: element.bounds,
+                content: element.content, // Just copy the original content directly
+                originalStrokes: element.originalStrokes,
+                position: newPosition
+            )
+            
+            print("Created element copy at position:", newPosition)
+            print("Copied content:", newElement.content)
+            recognizedElements.append(newElement)
+        }
     }
+
+
+
 }
 
 // Canvas View
@@ -469,12 +476,18 @@ struct CanvasView: UIViewRepresentable {
 
 // View for optimized elements
 struct RecognizedElementView: View {
-    let element: RecognizedElement
+    @Binding var element: RecognizedElement
     
     var body: some View {
         switch element.type {
         case .array:
-            ArrayView(content: element.content)
+            ArrayView(
+                content: element.content,
+                initialPosition: element.position,
+                onContentChanged: { newContent in
+                    element.content = newContent
+                }
+            )
         case .tree:
             TreeView(content: element.content)
         case .linkedList:
@@ -485,13 +498,22 @@ struct RecognizedElementView: View {
     }
 }
 
+
 // Array View
 struct ArrayView: View {
-    @State private var position: CGPoint = CGPoint(x: UIScreen.main.bounds.width/2, y: UIScreen.main.bounds.height/2)
+    @State private var position: CGPoint
     @State private var values: [String]
+    let onContentChanged: (String) -> Void
     
-    init(content: String) {
-        _values = State(initialValue: content.components(separatedBy: ","))
+    init(content: String, initialPosition: CGPoint, onContentChanged: @escaping (String) -> Void) {
+        _position = State(initialValue: initialPosition)
+        _values = State(initialValue: content.isEmpty ? [] : content.components(separatedBy: ","))
+        self.onContentChanged = onContentChanged
+    }
+    
+    private func updateContent() {
+        let newContent = values.joined(separator: ",")
+        onContentChanged(newContent)
     }
     
     var body: some View {
@@ -506,17 +528,19 @@ struct ArrayView: View {
         return HStack(spacing: 1) {
             // Front controls
             VStack(spacing: 4) {
-                // Delete button
                 Button(action: {
                     if !values.isEmpty {
                         values.removeFirst()
+                        updateContent()
                     }
                 }) {
                     Image(systemName: "minus.circle.fill")
                         .foregroundColor(.red)
                 }
-                // Add button
-                Button(action: { values.insert("", at: 0) }) {
+                Button(action: {
+                    values.insert("", at: 0)
+                    updateContent()
+                }) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(.blue)
                 }
@@ -532,27 +556,33 @@ struct ArrayView: View {
                         .overlay(
                             TextField("", text: Binding(
                                 get: { values[index] },
-                                set: { values[index] = $0 }
+                                set: { newValue in
+                                    values[index] = newValue
+                                    updateContent()
+                                }
                             ))
                             .multilineTextAlignment(.center)
                         )
                         .frame(width: 40, height: 40)
                 }
             }
+            .background(Color(UIColor.systemBackground))
             
             // Back controls
             VStack(spacing: 4) {
-                // Delete button
                 Button(action: {
                     if !values.isEmpty {
                         values.removeLast()
+                        updateContent()
                     }
                 }) {
                     Image(systemName: "minus.circle.fill")
                         .foregroundColor(.red)
                 }
-                // Add button
-                Button(action: { values.append("") }) {
+                Button(action: {
+                    values.append("")
+                    updateContent()
+                }) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(.blue)
                 }
@@ -564,7 +594,6 @@ struct ArrayView: View {
         .gesture(dragGesture)
     }
 }
-
 // Optimization Panel
 struct OptimizationPanel: View {
     @Binding var element: RecognizedElement?
