@@ -1,509 +1,30 @@
 import SwiftUI
-import PencilKit
 
-struct RecognizedElement: Identifiable {
-    let id = UUID()
-    var type: ElementType
-    var bounds: CGRect
-    var content: String
-    var originalStrokes: [PKStroke]
-    var position: CGPoint
-}
-
-enum ElementType {
-    case array
+struct Line {
+    var points: [CGPoint]
+    var color: Color
+    var lineWidth: CGFloat
+    var tool: DrawingTool
+    var text: String?
 }
 
 enum DrawingTool {
     case pen
     case eraser
-    case selector
-    case hand
+    case rectangle
+    case circle
+    case arrow
+    case text
+    case selection
+    case deque
 }
 
-extension PKStroke: @retroactive Equatable {}
-extension PKStroke: @retroactive Hashable {
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(renderBounds)
-        hasher.combine(transform)
-        hasher.combine(path.creationDate)
-    }
-    
-    public static func == (lhs: PKStroke, rhs: PKStroke) -> Bool {
-        return lhs.renderBounds == rhs.renderBounds &&
-               lhs.transform == rhs.transform &&
-               lhs.path.creationDate == rhs.path.creationDate
-    }
-}
-
-enum DataStructureType {
-    case array
-}
-
-struct DataStructuresPanel: View {
-    var onSelect: (ElementType) -> Void
-    
-    var body: some View {
-        VStack {
-            Text("Data Structures")
-                .font(.headline)
-                .padding(.bottom)
-            
-            Button(action: { onSelect(.array) }) {
-                HStack {
-                    Text("Array")
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(8)
-            }
-        }
-        .padding()
-        .background(Color(UIColor.systemBackground))
-        .cornerRadius(12)
-        .shadow(radius: 5)
-    }
-}
-
-struct ContentView: View {
-    @State private var canvas = PKCanvasView()
-    @State private var recognizedElements: [RecognizedElement] = []
-    @State private var selectedElement: RecognizedElement?
-    @State private var currentTool: DrawingTool = .pen
-    @State private var selectionPath: Path?
-    @State private var undoManager: UndoManager?
-    @State private var isSelectionActive = false
-    @State private var selectionBounds: CGRect = .zero
-    @State private var showDataStructuresPanel = false
-    @State private var previousDrawing: PKDrawing?
-    @State private var initialDrawing = PKDrawing()
-    @State private var draggedStrokes: [(stroke: PKStroke, initialTransform: CGAffineTransform)] = []
-    @State private var dragStartLocation: CGPoint?
-    @State private var originalDrawing: PKDrawing?
-    @State private var previousLocation: CGPoint?
-    @State private var dragOffset: CGPoint?
-    @State private var strokeIdentifiers: [PKStroke: StrokeIdentifier] = [:]
-    @State private var activeStrokeState: StrokeState?
-    
-    var dragGesture: some Gesture {
-            DragGesture()
-                .onChanged { value in
-                    if currentTool == .selector {
-                        handleSelectorDrag(value)
-                    } else if currentTool == .hand {
-                        handleHandDrag(value)
-                    }
-                }
-                .onEnded { value in
-                    if currentTool == .hand {
-                        resetHandDrag()
-                    } else if currentTool == .selector {
-                        // Only keep selection if it's larger than a minimum size
-                        let size = CGSize(
-                            width: abs(value.location.x - value.startLocation.x),
-                            height: abs(value.location.y - value.startLocation.y)
-                        )
-                        if size.width < 5 && size.height < 5 {
-                            clearSelection()
-                        }
-                    }
-                }
-        }
-
-        private func handleSelectorDrag(_ value: DragGesture.Value) {
-            isSelectionActive = true
-            let rect = CGRect(
-                origin: value.startLocation,
-                size: CGSize(
-                    width: value.location.x - value.startLocation.x,
-                    height: value.location.y - value.startLocation.y
-                )
-            )
-            selectionPath = Path { path in
-                path.addRect(rect)
-            }
-            selectionBounds = rect
-        }
-        
-        private func handleHandDrag(_ value: DragGesture.Value) {
-            if dragStartLocation == nil {
-                initializeHandDrag(at: value.startLocation)
-            }
-            
-            if activeStrokeState != nil {
-                updateDrawingWithTransform(at: value.location)
-            }
-        }
-        
-        private func resetHandDrag() {
-            print("\n=== Ending Hand Drag ===")
-            activeStrokeState = nil
-            dragStartLocation = nil
-            originalDrawing = nil
-        }
-
-        private func initializeHandDrag(at location: CGPoint) {
-            print("\n=== Starting Hand Drag ===")
-            dragStartLocation = location
-            originalDrawing = canvas.drawing
-            
-            let touchArea = CGRect(
-                x: location.x - 20,
-                y: location.y - 20,
-                width: 40,
-                height: 40
-            )
-            print("Touch area:", touchArea)
-            
-            // Find stroke under touch point
-            if let stroke = canvas.drawing.strokes.first(where: { $0.renderBounds.intersects(touchArea) }) {
-                let strokeCenter = CGPoint(
-                    x: stroke.renderBounds.midX,
-                    y: stroke.renderBounds.midY
-                )
-                let offset = CGPoint(
-                    x: location.x - strokeCenter.x,
-                    y: location.y - strokeCenter.y
-                )
-                
-                activeStrokeState = StrokeState(
-                    stroke: stroke,
-                    initialTransform: stroke.transform,
-                    initialCenter: strokeCenter,
-                    currentOffset: offset
-                )
-                
-                print("Selected stroke center:", strokeCenter)
-                print("Initial offset:", offset)
-            }
-        }
-        
-        private func updateDrawingWithTransform(at location: CGPoint) {
-            guard let state = activeStrokeState else { return }
-            
-            print("\n=== Updating Stroke Position ===")
-            var newDrawing = originalDrawing!
-            
-            // Remove the original stroke
-            newDrawing.strokes.removeAll { $0.renderBounds == state.stroke.renderBounds }
-            
-            // Calculate new position
-            let targetCenter = CGPoint(
-                x: location.x - state.currentOffset.x,
-                y: location.y - state.currentOffset.y
-            )
-            
-            let dx = targetCenter.x - state.initialCenter.x
-            let dy = targetCenter.y - state.initialCenter.y
-            
-            // Create transformed stroke
-            var transformedStroke = state.stroke
-            transformedStroke.transform = state.initialTransform.concatenating(
-                CGAffineTransform(translationX: dx, y: dy)
-            )
-            
-            newDrawing.strokes.append(transformedStroke)
-            print("Moving stroke to:", targetCenter)
-            
-            canvas.drawing = newDrawing
-        }
-
-    var body: some View {
-        ZStack {
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    if currentTool == .selector {
-                        clearSelection()
-                    }
-                }
-            
-            CanvasView(
-                canvas: $canvas,
-                tool: currentTool,
-                undoManager: $undoManager
-            )
-            .gesture(currentTool == .pen || currentTool == .eraser ? nil : dragGesture)
-
-            if let path = selectionPath, isSelectionActive {
-                ZStack {
-                    path.stroke(style: StrokeStyle(
-                        lineWidth: 2,
-                        dash: [5],
-                        dashPhase: 5
-                    ))
-                    .foregroundColor(.blue)
-                    
-                    Button(action: {
-                        copySelectedStrokes()
-                        isSelectionActive = false
-                        selectionPath = nil
-                    }) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 20))
-                            .foregroundColor(.white)
-                            .padding(12)
-                            .background(Color.blue)
-                            .clipShape(Circle())
-                            .shadow(radius: 3)
-                    }
-                    .position(
-                        x: selectionBounds.maxX + 30,
-                        y: selectionBounds.minY - 30
-                    )
-                }
-            }
-            
-            ForEach(recognizedElements.indices, id: \.self) { index in
-                RecognizedElementView(element: $recognizedElements[index])
-                    .onTapGesture {
-                        if currentTool == .selector {
-                            selectedElement = recognizedElements[index]
-                        }
-                    }
-            }
-            
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    VStack(spacing: 16) {
-                        HStack(spacing: 16) {
-                            ToolButton(
-                                icon: "arrow.uturn.backward",
-                                isSelected: false,
-                                action: {
-                                    canvas.undoManager?.undo()
-                                }
-                            )
-                            
-                            ToolButton(
-                                icon: "arrow.uturn.forward",
-                                isSelected: false,
-                                action: {
-                                    canvas.undoManager?.redo()
-                                }
-                            )
-                        }
-                        .padding()
-                        .background(
-                            RoundedRectangle(cornerRadius: 15)
-                                .fill(Color(UIColor.systemBackground))
-                                .shadow(radius: 5)
-                        )
-                        
-                        ToolSelectionPanel(
-                            currentTool: $currentTool,
-                            onToolChange: {
-                                clearSelection()
-                            }
-                        )
-                    }
-                    .padding()
-                }
-            }
-            
-            VStack {
-                DataStructuresPanel { type in
-                    let element = RecognizedElement(
-                        type: type,
-                        bounds: CGRect(x: 100, y: 100, width: 200, height: 50),
-                        content: "",
-                        originalStrokes: [],
-                        position: CGPoint(x: UIScreen.main.bounds.width/2, y: UIScreen.main.bounds.height/2)
-                    )
-                    recognizedElements.append(element)
-                }
-                .frame(width: 200)
-                .padding()
-                
-                Spacer()
-            }
-        }
-        .onAppear {
-            initialDrawing = canvas.drawing
-            canvas.becomeFirstResponder()
-        }
-    }
-    
-    // ... (keep all other methods like handleSelectorDrag, handleHandDrag, etc.)
-
-    private func copySelectedStrokes() {
-        print("\n=== Copying Elements ===")
-        print("Selection bounds:", selectionBounds)
-        
-        // Copy strokes
-        let selectedStrokes = canvas.drawing.strokes.filter { stroke in
-            selectionBounds.contains(stroke.renderBounds)
-        }
-        print("Selected strokes to copy:", selectedStrokes.count)
-        
-        if !selectedStrokes.isEmpty {
-            var newDrawing = canvas.drawing
-            print("Original drawing strokes:", newDrawing.strokes.count)
-            
-            let offset = CGPoint(x: 20, y: 20)
-            for stroke in selectedStrokes {
-                var transformedStroke = stroke
-                transformedStroke.transform = stroke.transform.concatenating(
-                    CGAffineTransform(translationX: offset.x, y: offset.y)
-                )
-                
-                let identifier = StrokeIdentifier(
-                    bounds: transformedStroke.renderBounds,
-                    creationDate: Date(),
-                    id: UUID()
-                )
-                strokeIdentifiers[transformedStroke] = identifier
-                
-                newDrawing.strokes.append(transformedStroke)
-                print("Created stroke copy with ID:", identifier.id)
-            }
-            
-            canvas.drawing = newDrawing
-        }
-        
-        // Modified selection logic for elements
-        let normalizedSelectionBounds = CGRect(
-            x: min(selectionBounds.minX, selectionBounds.maxX),
-            y: min(selectionBounds.minY, selectionBounds.maxY),
-            width: abs(selectionBounds.width),
-            height: abs(selectionBounds.height)
-        )
-        
-        let selectedElements = recognizedElements.filter { element in
-            let elementFrame = CGRect(
-                x: element.position.x - element.bounds.width/2,
-                y: element.position.y - element.bounds.height/2,
-                width: element.bounds.width,
-                height: element.bounds.height
-            )
-            
-            // Check if the element's center is within the selection bounds
-            let elementCenter = CGPoint(x: element.position.x, y: element.position.y)
-            let containsCenter = normalizedSelectionBounds.contains(elementCenter)
-            
-            print("Checking element at position:", element.position)
-            print("Element frame:", elementFrame)
-            print("Contains center:", containsCenter)
-            print("Original content:", element.content)
-            return containsCenter
-        }
-        
-        print("Selected elements to copy:", selectedElements.count)
-        
-        for element in selectedElements {
-            let offset = CGPoint(x: 20, y: 20)
-            let newPosition = CGPoint(
-                x: element.position.x + offset.x,
-                y: element.position.y + offset.y
-            )
-            
-            let newElement = RecognizedElement(
-                type: element.type,
-                bounds: element.bounds,
-                content: element.content,
-                originalStrokes: element.originalStrokes,
-                position: newPosition
-            )
-            
-            print("Created element copy at position:", newPosition)
-            print("Copied content:", newElement.content)
-            recognizedElements.append(newElement)
-        }
-    }
-    
-    private func clearSelection() {
-        isSelectionActive = false
-        selectionPath = nil
-        selectionBounds = .zero
-    }
-}
-
-
-// Canvas View
-struct CanvasView: UIViewRepresentable {
-    @Binding var canvas: PKCanvasView
-    var tool: DrawingTool
-    @Binding var undoManager: UndoManager?
-    
-    func makeUIView(context: Context) -> PKCanvasView {
-        canvas.drawingPolicy = .anyInput
-        canvas.tool = PKInkingTool(.pen)
-        canvas.delegate = context.coordinator
-        canvas.becomeFirstResponder()
-        return canvas
-    }
-    
-    func updateUIView(_ uiView: PKCanvasView, context: Context) {
-        switch tool {
-        case .pen:
-            uiView.drawingPolicy = .anyInput
-            uiView.tool = PKInkingTool(.pen)
-        case .eraser:
-            uiView.drawingPolicy = .anyInput
-            uiView.tool = PKEraserTool(.vector)
-        case .selector, .hand:
-            // Use pencilOnly to restrict drawing while maintaining interaction
-            uiView.drawingPolicy = .pencilOnly
-        }
-    }
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    class Coordinator: NSObject, PKCanvasViewDelegate {
-        var parent: CanvasView
-        
-        init(_ parent: CanvasView) {
-            self.parent = parent
-        }
-        
-        func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-            parent.undoManager = canvasView.undoManager
-        }
-    }
-}
-
-
-struct RecognizedElementView: View {
-    @Binding var element: RecognizedElement
-    
-    var body: some View {
-        switch element.type {
-        case .array:
-            ArrayView(
-                content: element.content,
-                initialPosition: element.position,
-                onContentChanged: { newContent in
-                    element.content = newContent
-                },
-                element: $element
-            )
-        }
-    }
-}
-
-
-// Array View
-struct ArrayView: View {
+struct DequeView: View {
     @State private var position: CGPoint
-    @State private var values: [String]
-    let onContentChanged: (String) -> Void
-    @Binding var element: RecognizedElement
+    @State private var values: [String] = [""]
     
-    init(content: String, initialPosition: CGPoint, onContentChanged: @escaping (String) -> Void, element: Binding<RecognizedElement>) {
+    init(initialPosition: CGPoint) {
         _position = State(initialValue: initialPosition)
-        _values = State(initialValue: content.isEmpty ? [""] : content.components(separatedBy: ","))
-        self.onContentChanged = onContentChanged
-        _element = element
-    }
-    
-    private func updateContent() {
-        let newContent = values.joined(separator: ",")
-        onContentChanged(newContent)
     }
     
     var body: some View {
@@ -513,7 +34,6 @@ struct ArrayView: View {
                     x: value.location.x,
                     y: value.location.y
                 )
-                element.position = self.position
             }
         
         return HStack(spacing: 1) {
@@ -522,7 +42,6 @@ struct ArrayView: View {
                 Button(action: {
                     if !values.isEmpty {
                         values.removeFirst()
-                        updateContent()
                     }
                 }) {
                     Image(systemName: "minus.circle.fill")
@@ -530,7 +49,6 @@ struct ArrayView: View {
                 }
                 Button(action: {
                     values.insert("", at: 0)
-                    updateContent()
                 }) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(.blue)
@@ -539,7 +57,7 @@ struct ArrayView: View {
             .offset(x: 10)
             .zIndex(1)
             
-            // Array cells
+            // Deque cells
             HStack(spacing: 1) {
                 ForEach(values.indices, id: \.self) { index in
                     Rectangle()
@@ -547,10 +65,7 @@ struct ArrayView: View {
                         .overlay(
                             TextField("", text: Binding(
                                 get: { values[index] },
-                                set: { newValue in
-                                    values[index] = newValue
-                                    updateContent()
-                                }
+                                set: { values[index] = $0 }
                             ))
                             .multilineTextAlignment(.center)
                         )
@@ -564,7 +79,6 @@ struct ArrayView: View {
                 Button(action: {
                     if !values.isEmpty {
                         values.removeLast()
-                        updateContent()
                     }
                 }) {
                     Image(systemName: "minus.circle.fill")
@@ -572,7 +86,6 @@ struct ArrayView: View {
                 }
                 Button(action: {
                     values.append("")
-                    updateContent()
                 }) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(.blue)
@@ -586,85 +99,607 @@ struct ArrayView: View {
     }
 }
 
-struct ToolSelectionPanel: View {
-    @Binding var currentTool: DrawingTool
-    var onToolChange: () -> Void  // Add this callback
+struct ContentView: View {
+    @State private var lines: [Line] = []
+    @State private var currentLine: Line?
+    @State private var selectedTool: DrawingTool = .pen
+    @State private var selectedColor: Color = .black
+    @State private var lineWidth: CGFloat = 3
+    @State private var currentText = ""
+    @State private var undoStack: [[Line]] = []
+    @State private var redoStack: [[Line]] = []
+    @State private var selectedShapeIndex: Int?
+    @State private var selectedElements: Set<Int> = []
+    @State private var dragOffset: CGSize = .zero
+    @State private var textPosition: CGPoint?
+    @State private var isShowingTextField = false
+    @State private var dequePositions: [UUID: CGPoint] = [:]
     
     var body: some View {
-        HStack(spacing: 16) {
-            ToolButton(
-                icon: "pencil",
-                isSelected: currentTool == .pen,
-                action: {
-                    currentTool = .pen
-                    onToolChange()
+        VStack {
+            // Toolbar
+            HStack {
+                // Drawing tools
+                ForEach([DrawingTool.pen, .eraser, .rectangle, .circle, .arrow, .text, .selection, .deque], id: \.self) { tool in
+                    Button(action: {
+                        // Save current text if exists
+                        saveCurrentText()
+                        
+                        // Switch tool and clean up
+                        selectedTool = tool
+                        selectedElements.removeAll()
+                        isShowingTextField = false
+                        currentText = ""
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                     to: nil,
+                                                     from: nil,
+                                                     for: nil)
+                    }) {
+                        Image(systemName: toolIcon(for: tool))
+                            .foregroundColor(selectedTool == tool ? .blue : .gray)
+                    }
+                    .padding()
                 }
-            )
+                
+                // Color picker
+                ColorPicker("", selection: $selectedColor)
+                    .padding()
+                
+                // Undo/Redo buttons
+                Button(action: undo) {
+                    Image(systemName: "arrow.uturn.backward")
+                }
+                .disabled(undoStack.isEmpty)
+                .padding()
+                
+                Button(action: redo) {
+                    Image(systemName: "arrow.uturn.forward")
+                }
+                .disabled(redoStack.isEmpty)
+                .padding()
+                
+                if !selectedElements.isEmpty {
+                    Button(action: copySelected) {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .padding()
+                }
+            }
             
-            ToolButton(
-                icon: "eraser",
-                isSelected: currentTool == .eraser,
-                action: {
-                    currentTool = .eraser
-                    onToolChange()
+            // Canvas
+            ZStack {
+                Canvas { context, size in
+                    for (index, line) in lines.enumerated() {
+                        let isSelected = selectedElements.contains(index)
+                        if isSelected && dragOffset != .zero {
+                            var offsetLine = line
+                            offsetLine.points = line.points.map { CGPoint(
+                                x: $0.x + dragOffset.width,
+                                y: $0.y + dragOffset.height
+                            )}
+                            drawElement(context: context, line: offsetLine, isSelected: true)
+                        } else {
+                            drawElement(context: context, line: line, isSelected: isSelected)
+                        }
+                    }
+                    if let currentLine = currentLine {
+                        drawElement(context: context, line: currentLine, isSelected: false)
+                    }
                 }
-            )
-            
-            ToolButton(
-                icon: "lasso",
-                isSelected: currentTool == .selector,
-                action: {
-                    currentTool = .selector
-                    onToolChange()
+                
+                // Separate the tap gesture from other gestures
+                .onTapGesture { location in
+                    print("Tap detected, selected tool: \(selectedTool)") // Debug print
+                    if selectedTool == .deque {
+                        let id = UUID()
+                        print("Creating deque at: \(location)") // Debug print
+                        dequePositions[id] = location
+                    } else if selectedTool == .text {
+                        textPosition = location
+                        isShowingTextField = true
+                        currentText = ""
+                    } else {
+                        handleTap(at: location)
+                    }
                 }
-            )
-            
-            ToolButton(
-                icon: "hand.draw",
-                isSelected: currentTool == .hand,
-                action: {
-                    currentTool = .hand
-                    onToolChange()
-                }
-            )
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 15)
-                .fill(Color(UIColor.systemBackground))
-                .shadow(radius: 5)
-        )
-    }
-}
-
-struct ToolButton: View {
-    let icon: String
-    let isSelected: Bool
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(isSelected ? .blue : .gray)
-                .frame(width: 44, height: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(isSelected ? Color.blue.opacity(0.2) : Color.clear)
+                .gesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { value in
+                            if selectedTool == .text {
+                                // Ignore drag for text tool
+                                return
+                            }
+                            if selectedTool == .selection {
+                                if !selectedElements.isEmpty {
+                                    dragOffset = value.translation
+                                } else {
+                                    handleSelectionDrag(value)
+                                }
+                            } else if selectedTool == .text {
+                                // No drag handling for text tool
+                            } else {
+                                handleDragChange(value)
+                            }
+                        }
+                        .onEnded { value in
+                            if selectedTool == .text {
+                                // Ignore drag for text tool
+                                return
+                            }
+                            if selectedTool == .selection {
+                                if !selectedElements.isEmpty {
+                                    applyDragToSelected()
+                                } else {
+                                    handleSelectionEnd(value)
+                                }
+                                dragOffset = .zero
+                            } else if selectedTool == .text {
+                                saveCurrentText()
+                                textPosition = value.location
+                                isShowingTextField = true
+                                currentText = ""
+                            } else {
+                                handleDragEnd(value)
+                            }
+                        }
                 )
+                
+                // Display DequeViews
+                ForEach(Array(dequePositions.keys), id: \.self) { id in
+                    if let position = dequePositions[id] {
+                        DequeView(initialPosition: position)
+                    }
+                }
+            }
+            .background(Color.white)
+            .border(Color.gray)
+
+            // Overlay TextField for text input
+            if isShowingTextField, let position = textPosition {
+                TextField("Enter text", text: $currentText)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .frame(width: 200)
+                    .position(x: position.x, y: position.y)
+                    .onSubmit {
+                        if !currentText.isEmpty {
+                            let newLine = Line(
+                                points: [position],
+                                color: selectedColor,
+                                lineWidth: lineWidth,
+                                tool: .text,
+                                text: currentText
+                            )
+                            undoStack.append(lines)
+                            lines.append(newLine)
+                            redoStack.removeAll()
+                        }
+                        isShowingTextField = false
+                        currentText = ""
+                    }
+                    .onAppear {
+                        // Focus the TextField when it appears
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            UIApplication.shared.sendAction(#selector(UIResponder.becomeFirstResponder),
+                                                         to: nil,
+                                                         from: nil,
+                                                         for: nil)
+                        }
+                    }
+            }
+            
+            // Show text field when shape is selected
+            if let index = selectedShapeIndex {
+                HStack {
+                    TextField("Enter text", text: $currentText)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .onChange(of: currentText) { newValue in
+                            var updatedLine = lines[index]
+                            updatedLine.text = newValue
+                            lines[index] = updatedLine
+                        }
+                    
+                    Button("Done") {
+                        selectedShapeIndex = nil
+                        currentText = ""
+                    }
+                }
+                .padding()
+            }
+        }
+    }
+    
+    private func toolIcon(for tool: DrawingTool) -> String {
+        switch tool {
+        case .pen: return "pencil"
+        case .eraser: return "eraser"
+        case .rectangle: return "rectangle"
+        case .circle: return "circle"
+        case .arrow: return "arrow.right"
+        case .text: return "text.cursor"
+        case .selection: return "lasso"
+        case .deque: return "square.stack"
+        }
+    }
+    
+    private func handleDragChange(_ value: DragGesture.Value) {
+        let point = value.location
+        if currentLine == nil {
+            currentLine = Line(points: [point], color: selectedColor, lineWidth: lineWidth, tool: selectedTool)
+        } else {
+            currentLine?.points.append(point)
+        }
+    }
+    
+    private func handleDragEnd(_ value: DragGesture.Value) {
+        if let line = currentLine {
+            undoStack.append(lines)
+            redoStack.removeAll()
+            lines.append(line)
+        }
+        currentLine = nil
+    }
+    
+    private func handleTap(at location: CGPoint) {
+        if selectedTool == .selection {
+            var tappedSelectedElement = false
+            
+            // Check if tap is inside any selected element
+            for index in selectedElements {
+                let line = lines[index]
+                let bounds = line.points.reduce(CGRect.null) { rect, point in
+                    rect.union(CGRect(x: point.x, y: point.y, width: 1, height: 1))
+                }
+                // Add some padding to make selection easier
+                let selectionRect = bounds.insetBy(dx: -10, dy: -10)
+                
+                if selectionRect.contains(location) {
+                    tappedSelectedElement = true
+                    break
+                }
+            }
+            
+            // If we tapped outside, clear selection and check for new elements to select
+            if !tappedSelectedElement {
+                selectedElements.removeAll()
+                
+                // Try to select new element at tap location
+                for (index, line) in lines.enumerated().reversed() {
+                    let bounds = line.points.reduce(CGRect.null) { rect, point in
+                        rect.union(CGRect(x: point.x, y: point.y, width: 1, height: 1))
+                    }
+                    let selectionRect = bounds.insetBy(dx: -10, dy: -10)
+                    
+                    if selectionRect.contains(location) {
+                        selectedElements.insert(index)
+                        return
+                    }
+                }
+            }
+            return
+        }
+        
+        // Original shape selection code for rectangle/circle text
+        for (index, line) in lines.enumerated().reversed() {
+            if line.tool == .rectangle || line.tool == .circle {
+                if let first = line.points.first, let last = line.points.last {
+                    let rect = CGRect(
+                        x: min(first.x, last.x),
+                        y: min(first.y, last.y),
+                        width: abs(last.x - first.x),
+                        height: abs(last.y - first.y)
+                    )
+                    
+                    if rect.contains(location) {
+                        selectedShapeIndex = index
+                        currentText = line.text ?? ""
+                        return
+                    }
+                }
+            }
+        }
+        
+        selectedShapeIndex = nil
+        currentText = ""
+    }
+    
+    private func drawElement(context: GraphicsContext, line: Line, isSelected: Bool) {
+        // Draw the regular element first
+        switch line.tool {
+        case .pen:
+            var path = Path()
+            path.addLines(line.points)
+            context.stroke(path, with: .color(line.color), lineWidth: line.lineWidth)
+            
+        case .eraser:
+            var path = Path()
+            path.addLines(line.points)
+            context.stroke(path, with: .color(.white), lineWidth: line.lineWidth + 10)
+            
+        case .rectangle:
+            if line.points.count >= 2 {
+                let start = line.points.first!
+                let end = line.points.last!
+                let rect = CGRect(x: min(start.x, end.x),
+                                y: min(start.y, end.y),
+                                width: abs(end.x - start.x),
+                                height: abs(end.y - start.y))
+                context.stroke(Path(rect), with: .color(line.color), lineWidth: line.lineWidth)
+                if let text = line.text {
+                    context.draw(Text(text).foregroundColor(line.color), in: rect)
+                }
+            }
+            
+        case .circle:
+            if line.points.count >= 2 {
+                let start = line.points.first!
+                let end = line.points.last!
+                let rect = CGRect(x: min(start.x, end.x),
+                                y: min(start.y, end.y),
+                                width: abs(end.x - start.x),
+                                height: abs(end.y - start.y))
+                context.stroke(Path(ellipseIn: rect), with: .color(line.color), lineWidth: line.lineWidth)
+                if let text = line.text {
+                    context.draw(Text(text).foregroundColor(line.color), in: rect)
+                }
+            }
+            
+        case .arrow:
+            if line.points.count >= 2 {
+                let start = line.points.first!
+                let end = line.points.last!
+                drawArrow(context: context, from: start, to: end, color: line.color, lineWidth: line.lineWidth)
+            }
+        case .text:
+            if let position = line.points.first {
+                if let text = line.text {
+                    context.draw(
+                        Text(text)
+                            .foregroundColor(line.color),
+                        at: position
+                    )
+                }
+            }
+            
+        case .selection:
+            if line.points.count >= 2 {
+                let start = line.points[0]
+                let end = line.points[1]
+                let rect = CGRect(
+                    x: min(start.x, end.x),
+                    y: min(start.y, end.y),
+                    width: abs(end.x - start.x),
+                    height: abs(end.y - start.y)
+                )
+                // Draw semi-transparent selection rectangle
+                context.fill(
+                    Path(rect),
+                    with: .color(line.color)
+                )
+                // Draw border
+                context.stroke(
+                    Path(rect),
+                    with: .color(.blue),
+                    lineWidth: line.lineWidth
+                )
+            }
+        case .deque:
+            // No need to draw anything here since deques are handled by DequeView
+            break
+        }
+        
+        // Add selection indicator if the element is selected
+        if isSelected {
+            switch line.tool {
+            case .pen, .eraser:
+                let bounds = line.points.reduce(CGRect.null) { rect, point in
+                    rect.union(CGRect(x: point.x, y: point.y, width: 1, height: 1))
+                }
+                // Add padding to make the selection border visible
+                let selectionRect = bounds.insetBy(dx: -5, dy: -5)
+                let dash: [CGFloat] = [5, 5] // Creates a dashed pattern
+                context.stroke(
+                    Path(selectionRect),
+                    with: .color(.blue),
+                    style: StrokeStyle(
+                        lineWidth: 2,
+                        dash: dash
+                    )
+                )
+                
+            case .rectangle, .circle:
+                if line.points.count >= 2 {
+                    let start = line.points.first!
+                    let end = line.points.last!
+                    let rect = CGRect(
+                        x: min(start.x, end.x),
+                        y: min(start.y, end.y),
+                        width: abs(end.x - start.x),
+                        height: abs(end.y - start.y)
+                    )
+                    let selectionRect = rect.insetBy(dx: -5, dy: -5)
+                    let dash: [CGFloat] = [5, 5]
+                    context.stroke(
+                        Path(selectionRect),
+                        with: .color(.blue),
+                        style: StrokeStyle(
+                            lineWidth: 2,
+                            dash: dash
+                        )
+                    )
+                }
+                
+            case .arrow:
+                if line.points.count >= 2 {
+                    let start = line.points.first!
+                    let end = line.points.last!
+                    let bounds = CGRect(
+                        x: min(start.x, end.x),
+                        y: min(start.y, end.y),
+                        width: abs(end.x - start.x),
+                        height: abs(end.y - start.y)
+                    )
+                    let selectionRect = bounds.insetBy(dx: -5, dy: -5)
+                    let dash: [CGFloat] = [5, 5]
+                    context.stroke(
+                        Path(selectionRect),
+                        with: .color(.blue),
+                        style: StrokeStyle(
+                            lineWidth: 2,
+                            dash: dash
+                        )
+                    )
+                }
+                
+            case .text:
+                if let position = line.points.first {
+                    let textSize = CGSize(width: 100, height: 30) // Approximate text size
+                    let selectionRect = CGRect(
+                        x: position.x - textSize.width/2,
+                        y: position.y - textSize.height/2,
+                        width: textSize.width,
+                        height: textSize.height
+                    )
+                    let dash: [CGFloat] = [5, 5]
+                    context.stroke(
+                        Path(selectionRect),
+                        with: .color(.blue),
+                        style: StrokeStyle(
+                            lineWidth: 2,
+                            dash: dash
+                        )
+                    )
+                }
+                
+            case .deque:
+                // No need for selection indicator since deques are handled by DequeView
+                break
+                
+            case .selection:
+                break // Don't draw selection indicator for selection tool itself
+            }
+        }
+    }
+    
+    private func drawArrow(context: GraphicsContext, from start: CGPoint, to end: CGPoint, color: Color, lineWidth: CGFloat) {
+        var path = Path()
+        path.move(to: start)
+        path.addLine(to: end)
+        
+        let angle = atan2(end.y - start.y, end.x - start.x)
+        let arrowLength: CGFloat = 20
+        let arrowAngle: CGFloat = .pi / 6
+        
+        let arrowPoint1 = CGPoint(x: end.x - arrowLength * cos(angle - arrowAngle),
+                                 y: end.y - arrowLength * sin(angle - arrowAngle))
+        let arrowPoint2 = CGPoint(x: end.x - arrowLength * cos(angle + arrowAngle),
+                                 y: end.y - arrowLength * sin(angle + arrowAngle))
+        
+        path.move(to: end)
+        path.addLine(to: arrowPoint1)
+        path.move(to: end)
+        path.addLine(to: arrowPoint2)
+        
+        context.stroke(path, with: .color(color), lineWidth: lineWidth)
+    }
+    
+    private func undo() {
+        if let previousLines = undoStack.popLast() {
+            redoStack.append(lines)
+            lines = previousLines
+            selectedShapeIndex = nil
+            currentText = ""
+        }
+    }
+    
+    private func redo() {
+        if let nextLines = redoStack.popLast() {
+            undoStack.append(lines)
+            lines = nextLines
+            selectedShapeIndex = nil
+            currentText = ""
+        }
+    }
+    
+    private func handleSelectionDrag(_ value: DragGesture.Value) {
+        if currentLine == nil {
+            currentLine = Line(points: [value.startLocation], color: .blue.opacity(0.3), lineWidth: 1, tool: .rectangle)
+        }
+        currentLine?.points = [value.startLocation, value.location]
+    }
+    
+    private func handleSelectionEnd(_ value: DragGesture.Value) {
+        guard let selection = currentLine else { return }
+        currentLine = nil
+        
+        let selectionRect = CGRect(
+            x: min(selection.points[0].x, selection.points[1].x),
+            y: min(selection.points[0].y, selection.points[1].y),
+            width: abs(selection.points[1].x - selection.points[0].x),
+            height: abs(selection.points[1].y - selection.points[0].y)
+        )
+        
+        selectedElements.removeAll()
+        for (index, line) in lines.enumerated() {
+            if isLine(line, intersectingWith: selectionRect) {
+                selectedElements.insert(index)
+            }
+        }
+    }
+    
+    private func isLine(_ line: Line, intersectingWith rect: CGRect) -> Bool {
+        // Simple bounding box check
+        let lineBounds = line.points.reduce(CGRect.null) { rect, point in
+            rect.union(CGRect(x: point.x, y: point.y, width: 1, height: 1))
+        }
+        return rect.intersects(lineBounds)
+    }
+    
+    private func applyDragToSelected() {
+        let offsetElements = selectedElements.sorted().reversed()
+        for index in offsetElements {
+            var line = lines[index]
+            line.points = line.points.map { CGPoint(
+                x: $0.x + dragOffset.width,
+                y: $0.y + dragOffset.height
+            )}
+            lines[index] = line
+        }
+    }
+    
+    private func copySelected() {
+        undoStack.append(lines)
+        redoStack.removeAll()
+        
+        let newElements = selectedElements.map { lines[$0] }.map { line -> Line in
+            var newLine = line
+            newLine.points = line.points.map { CGPoint(
+                x: $0.x + 20, // Offset copied elements slightly
+                y: $0.y + 20
+            )}
+            return newLine
+        }
+        
+        lines.append(contentsOf: newElements)
+        selectedElements.removeAll()
+    }
+    
+    // Add this function to save the current text
+    private func saveCurrentText() {
+        if isShowingTextField && !currentText.isEmpty, let position = textPosition {
+            let newLine = Line(
+                points: [position],
+                color: selectedColor,
+                lineWidth: lineWidth,
+                tool: .text,
+                text: currentText
+            )
+            undoStack.append(lines)
+            lines.append(newLine)
+            redoStack.removeAll()
         }
     }
 }
 
-struct StrokeIdentifier: Hashable {
-    let bounds: CGRect
-    let creationDate: Date
-    let id: UUID
-}
-
-struct StrokeState {
-    let stroke: PKStroke
-    let initialTransform: CGAffineTransform
-    let initialCenter: CGPoint
-    var currentOffset: CGPoint
+#Preview {
+    ContentView()
 }
