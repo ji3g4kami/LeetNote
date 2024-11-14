@@ -17,6 +17,7 @@ enum DrawingTool {
     case text
     case selection
     case deque
+    case grid
 }
 
 struct DequeView: View {
@@ -100,6 +101,52 @@ struct DequeView: View {
     }
 }
 
+struct GridView: View {
+    @State private var position: CGPoint
+    @State private var values: [[String]]
+    @State private var rows: Int
+    @State private var cols: Int
+    
+    init(initialPosition: CGPoint, rows: Int = 3, cols: Int = 3) {
+        _position = State(initialValue: initialPosition)
+        _rows = State(initialValue: rows)
+        _cols = State(initialValue: cols)
+        _values = State(initialValue: Array(repeating: Array(repeating: "", count: cols), count: rows))
+    }
+    
+    var body: some View {
+        let dragGesture = DragGesture()
+            .onChanged { value in
+                self.position = CGPoint(
+                    x: value.location.x,
+                    y: value.location.y
+                )
+            }
+        
+        return VStack(spacing: 1) {
+            ForEach(0..<rows, id: \.self) { row in
+                HStack(spacing: 1) {
+                    ForEach(0..<cols, id: \.self) { col in
+                        Rectangle()
+                            .stroke(Color.black, lineWidth: 1)
+                            .overlay(
+                                TextField("", text: Binding(
+                                    get: { values[row][col] },
+                                    set: { values[row][col] = $0 }
+                                ))
+                                .multilineTextAlignment(.center)
+                            )
+                            .frame(width: 40, height: 40)
+                    }
+                }
+            }
+        }
+        .background(Color(UIColor.systemBackground))
+        .position(x: position.x, y: position.y)
+        .gesture(dragGesture)
+    }
+}
+
 struct ContentView: View {
     @State private var lines: [Line] = []
     @State private var currentLine: Line?
@@ -119,13 +166,18 @@ struct ContentView: View {
     @State private var dequeInitialValues = ""
     @State private var pendingDequePosition: CGPoint?
     @State private var isShowingTextAlert = false
+    @State private var gridPositions: [UUID: CGPoint] = [:]
+    @State private var isShowingGridAlert = false
+    @State private var gridRows = ""
+    @State private var gridCols = ""
+    @State private var pendingGridPosition: CGPoint?
     
     var body: some View {
         VStack {
             // Toolbar
             HStack {
                 // Drawing tools
-                ForEach([DrawingTool.pen, .eraser, .rectangle, .circle, .arrow, .text, .selection, .deque], id: \.self) { tool in
+                ForEach([DrawingTool.pen, .eraser, .rectangle, .circle, .arrow, .text, .selection, .deque, .grid], id: \.self) { tool in
                     Button(action: {
                         // Save current text if exists
                         saveCurrentText()
@@ -194,10 +246,14 @@ struct ContentView: View {
                 
                 // Separate the tap gesture from other gestures
                 .onTapGesture { location in
-                    print("Tap detected, selected tool: \(selectedTool)") // Debug print
+                    print("Tap detected, selected tool: \(selectedTool)")
                     if selectedTool == .deque {
                         pendingDequePosition = location
                         isShowingDequeAlert = true
+                        return
+                    } else if selectedTool == .grid {
+                        pendingGridPosition = location
+                        isShowingGridAlert = true
                         return
                     } else if selectedTool == .text {
                         textPosition = location
@@ -259,6 +315,17 @@ struct ContentView: View {
                                 .split(separator: ",")
                                 .map { $0.trimmingCharacters(in: .whitespaces) }
                         DequeView(initialPosition: position, initialValues: initialValues)
+                    }
+                }
+                
+                // Display GridViews
+                ForEach(Array(gridPositions.keys), id: \.self) { id in
+                    if let position = gridPositions[id] {
+                        GridView(
+                            initialPosition: position,
+                            rows: Int(gridRows) ?? 3,
+                            cols: Int(gridCols) ?? 3
+                        )
                     }
                 }
             }
@@ -354,6 +421,26 @@ struct ContentView: View {
                 textPosition = nil
             }
         }
+        .alert("Enter Grid Dimensions", isPresented: $isShowingGridAlert) {
+            TextField("Rows", text: $gridRows)
+                .keyboardType(.numberPad)
+            TextField("Columns", text: $gridCols)
+                .keyboardType(.numberPad)
+            Button("OK") {
+                if let position = pendingGridPosition {
+                    let id = UUID()
+                    gridPositions[id] = position
+                }
+                pendingGridPosition = nil
+            }
+            Button("Cancel", role: .cancel) {
+                gridRows = ""
+                gridCols = ""
+                pendingGridPosition = nil
+            }
+        } message: {
+            Text("Enter the number of rows and columns")
+        }
     }
     
     private func toolIcon(for tool: DrawingTool) -> String {
@@ -366,6 +453,7 @@ struct ContentView: View {
         case .text: return "text.cursor"
         case .selection: return "lasso"
         case .deque: return "square.stack"
+        case .grid: return "grid"
         }
     }
     
@@ -533,6 +621,9 @@ struct ContentView: View {
         case .deque:
             // No need to draw anything here since deques are handled by DequeView
             break
+        case .grid:
+            // No need to draw anything here since grids are handled by GridView
+            break
         }
         
         // Add selection indicator if the element is selected
@@ -624,6 +715,9 @@ struct ContentView: View {
                 
             case .selection:
                 break // Don't draw selection indicator for selection tool itself
+            case .grid:
+                // No need for selection indicator since grids are handled by GridView
+                break
             }
         }
     }
