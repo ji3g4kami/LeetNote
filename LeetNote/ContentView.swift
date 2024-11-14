@@ -118,6 +118,7 @@ struct ContentView: View {
     @State private var isShowingDequeAlert = false
     @State private var dequeInitialValues = ""
     @State private var pendingDequePosition: CGPoint?
+    @State private var isShowingTextAlert = false
     
     var body: some View {
         VStack {
@@ -200,8 +201,7 @@ struct ContentView: View {
                         return
                     } else if selectedTool == .text {
                         textPosition = location
-                        isShowingTextField = true
-                        currentText = ""
+                        isShowingTextAlert = true
                     } else {
                         handleTap(at: location)
                     }
@@ -329,6 +329,29 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) {
                 dequeInitialValues = ""
                 pendingDequePosition = nil
+            }
+        }
+        .alert("Enter Text", isPresented: $isShowingTextAlert) {
+            TextField("Text", text: $currentText)
+            Button("OK") {
+                if !currentText.isEmpty, let position = textPosition {
+                    let newLine = Line(
+                        points: [position],
+                        color: selectedColor,
+                        lineWidth: lineWidth,
+                        tool: .text,
+                        text: currentText
+                    )
+                    undoStack.append(lines)
+                    lines.append(newLine)
+                    redoStack.removeAll()
+                }
+                currentText = ""
+                textPosition = nil
+            }
+            Button("Cancel", role: .cancel) {
+                currentText = ""
+                textPosition = nil
             }
         }
     }
