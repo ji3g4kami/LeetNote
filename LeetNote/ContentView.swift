@@ -101,17 +101,23 @@ struct DequeView: View {
     }
 }
 
+// Helper function to parse array format
+
+
 struct GridView: View {
     @State private var position: CGPoint
     @State private var values: [[String]]
     @State private var rows: Int
     @State private var cols: Int
     
-    init(initialPosition: CGPoint, rows: Int = 3, cols: Int = 3) {
+    init(initialPosition: CGPoint, arrayFormat: String) {
         _position = State(initialValue: initialPosition)
-        _rows = State(initialValue: rows)
-        _cols = State(initialValue: cols)
-        _values = State(initialValue: Array(repeating: Array(repeating: "", count: cols), count: rows))
+        
+        // Parse array format input [[1,2],[3,4]]
+        let parsedValues = GridView.parseArrayFormat(arrayFormat)
+        _values = State(initialValue: parsedValues)
+        _rows = State(initialValue: parsedValues.count)
+        _cols = State(initialValue: parsedValues.first?.count ?? 0)
     }
     
     var body: some View {
@@ -145,6 +151,31 @@ struct GridView: View {
         .position(x: position.x, y: position.y)
         .gesture(dragGesture)
     }
+    
+    static func parseArrayFormat(_ input: String) -> [[String]] {
+        // Remove whitespace
+        var cleaned = input.replacingOccurrences(of: " ", with: "")
+        
+        // Ensure the string starts and ends with [[...]]
+        if cleaned.hasPrefix("[[") && cleaned.hasSuffix("]]") {
+            // Remove outer brackets
+            cleaned = String(cleaned.dropFirst(2).dropLast(2))
+            
+            // Split into rows by "],["
+            let rows = cleaned.components(separatedBy: "],[")
+            
+            return rows.map { row in
+                // Clean up any remaining brackets
+                let cleanRow = row.replacingOccurrences(of: "[", with: "")
+                    .replacingOccurrences(of: "]", with: "")
+                
+                // Split row into values
+                return cleanRow.components(separatedBy: ",")
+            }
+        }
+        
+        return [[]]  // Return empty grid if parsing fails
+    }
 }
 
 struct ContentView: View {
@@ -168,8 +199,7 @@ struct ContentView: View {
     @State private var isShowingTextAlert = false
     @State private var gridPositions: [UUID: CGPoint] = [:]
     @State private var isShowingGridAlert = false
-    @State private var gridRows = ""
-    @State private var gridCols = ""
+    @State private var gridArrayInput = ""
     @State private var pendingGridPosition: CGPoint?
     
     var body: some View {
@@ -323,8 +353,7 @@ struct ContentView: View {
                     if let position = gridPositions[id] {
                         GridView(
                             initialPosition: position,
-                            rows: Int(gridRows) ?? 3,
-                            cols: Int(gridCols) ?? 3
+                            arrayFormat: gridArrayInput
                         )
                     }
                 }
@@ -421,11 +450,8 @@ struct ContentView: View {
                 textPosition = nil
             }
         }
-        .alert("Enter Grid Dimensions", isPresented: $isShowingGridAlert) {
-            TextField("Rows", text: $gridRows)
-                .keyboardType(.numberPad)
-            TextField("Columns", text: $gridCols)
-                .keyboardType(.numberPad)
+        .alert("Create Grid", isPresented: $isShowingGridAlert) {
+            TextField("Array (e.g., [[1,2],[3,4]])", text: $gridArrayInput)
             Button("OK") {
                 if let position = pendingGridPosition {
                     let id = UUID()
@@ -434,12 +460,11 @@ struct ContentView: View {
                 pendingGridPosition = nil
             }
             Button("Cancel", role: .cancel) {
-                gridRows = ""
-                gridCols = ""
+                gridArrayInput = ""
                 pendingGridPosition = nil
             }
         } message: {
-            Text("Enter the number of rows and columns")
+            Text("Enter array in format [[1,2],[3,4]]")
         }
     }
     
@@ -777,8 +802,7 @@ struct ContentView: View {
             x: min(selection.points[0].x, selection.points[1].x),
             y: min(selection.points[0].y, selection.points[1].y),
             width: abs(selection.points[1].x - selection.points[0].x),
-            height: abs(selection.points[1].y - selection.points[0].y)
-        )
+            height: abs(selection.points[1].y - selection.points[0].y))
         
         selectedElements.removeAll()
         for (index, line) in lines.enumerated() {
@@ -845,3 +869,4 @@ struct ContentView: View {
 #Preview {
     ContentView()
 }
+
