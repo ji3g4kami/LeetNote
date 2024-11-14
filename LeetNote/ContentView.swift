@@ -251,6 +251,20 @@ struct ContentView: View {
                     }
                     .padding()
                 }
+                
+                Button(action: {
+                    undoStack.append(lines)
+                    lines.removeAll()
+                    redoStack.removeAll()
+                    selectedElements.removeAll()
+                    currentText = ""
+                    dequePositions.removeAll()
+                    gridPositions.removeAll()
+                }) {
+                    Image(systemName: "trash")
+                        .foregroundColor(.red)
+                }
+                .padding()
             }
             
             // Canvas
