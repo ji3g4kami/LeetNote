@@ -21,10 +21,11 @@ enum DrawingTool {
 
 struct DequeView: View {
     @State private var position: CGPoint
-    @State private var values: [String] = [""]
+    @State private var values: [String]
     
-    init(initialPosition: CGPoint) {
+    init(initialPosition: CGPoint, initialValues: [String] = [""]) {
         _position = State(initialValue: initialPosition)
+        _values = State(initialValue: initialValues)
     }
     
     var body: some View {
@@ -114,6 +115,9 @@ struct ContentView: View {
     @State private var textPosition: CGPoint?
     @State private var isShowingTextField = false
     @State private var dequePositions: [UUID: CGPoint] = [:]
+    @State private var isShowingDequeAlert = false
+    @State private var dequeInitialValues = ""
+    @State private var pendingDequePosition: CGPoint?
     
     var body: some View {
         VStack {
@@ -191,9 +195,9 @@ struct ContentView: View {
                 .onTapGesture { location in
                     print("Tap detected, selected tool: \(selectedTool)") // Debug print
                     if selectedTool == .deque {
-                        let id = UUID()
-                        print("Creating deque at: \(location)") // Debug print
-                        dequePositions[id] = location
+                        pendingDequePosition = location
+                        isShowingDequeAlert = true
+                        return
                     } else if selectedTool == .text {
                         textPosition = location
                         isShowingTextField = true
@@ -247,7 +251,14 @@ struct ContentView: View {
                 // Display DequeViews
                 ForEach(Array(dequePositions.keys), id: \.self) { id in
                     if let position = dequePositions[id] {
-                        DequeView(initialPosition: position)
+                        let initialValues = dequeInitialValues.isEmpty ? 
+                            [""] : 
+                            dequeInitialValues
+                                .replacingOccurrences(of: "[", with: "")
+                                .replacingOccurrences(of: "]", with: "")
+                                .split(separator: ",")
+                                .map { $0.trimmingCharacters(in: .whitespaces) }
+                        DequeView(initialPosition: position, initialValues: initialValues)
                     }
                 }
             }
@@ -304,6 +315,20 @@ struct ContentView: View {
                     }
                 }
                 .padding()
+            }
+        }
+        .alert("Enter Initial Values", isPresented: $isShowingDequeAlert) {
+            TextField("e.g., 1,2,3 or leave empty", text: $dequeInitialValues)
+            Button("OK") {
+                if let position = pendingDequePosition {
+                    let id = UUID()
+                    dequePositions[id] = position
+                }
+                pendingDequePosition = nil
+            }
+            Button("Cancel", role: .cancel) {
+                dequeInitialValues = ""
+                pendingDequePosition = nil
             }
         }
     }
