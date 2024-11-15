@@ -357,6 +357,7 @@ struct ContentView: View {
     @State private var pendingGridPosition: CGPoint?
     @State private var isDraggingOverBin = false
     @State private var binAnimation = false
+    @State private var showDataStructuresOnTop = true
     
     var body: some View {
         VStack {
@@ -408,23 +409,36 @@ struct ContentView: View {
                     .padding()
                 }
                 
-                Button(action: {
-                    undoStack.append(lines)
-                    lines.removeAll()
-                    redoStack.removeAll()
-                    selectedElements.removeAll()
-                    currentText = ""
-                    dequePositions.removeAll()
-                    gridPositions.removeAll()
-                }) {
-                    Image(systemName: "trash")
-                        .foregroundColor(.red)
+                // Group the trash and layer controls together
+                HStack(spacing: 4) {  // Reduced spacing between these related controls
+                    Button(action: {
+                        undoStack.append(lines)
+                        lines.removeAll()
+                        redoStack.removeAll()
+                        selectedElements.removeAll()
+                        currentText = ""
+                        dequePositions.removeAll()
+                        gridPositions.removeAll()
+                    }) {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                    }
+                    
+                    Spacer()
+                    Toggle("", isOn: $showDataStructuresOnTop)
+                           .toggleStyle(ImageToggleStyle(image: "square.stack.3d.up"))
+                           .padding()
                 }
-                .padding()
             }
             
             // Canvas
             ZStack {
+                if !showDataStructuresOnTop {
+                    // Data Structures Layer
+                    dataStructuresLayer
+                }
+                
+                // Canvas Layer
                 Canvas { context, size in
                     for (index, line) in lines.enumerated() {
                         let isSelected = selectedElements.contains(index)
@@ -443,8 +457,6 @@ struct ContentView: View {
                         drawElement(context: context, line: currentLine, isSelected: false)
                     }
                 }
-                
-                // Separate the tap gesture from other gestures
                 .onTapGesture { location in
                     print("Tap detected, selected tool: \(selectedTool)")
                     if selectedTool == .deque {
@@ -504,42 +516,12 @@ struct ContentView: View {
                         }
                 )
                 
-                // Display DequeViews with deletion detection
-                ForEach(Array(dequePositions.keys), id: \.self) { id in
-                    if let position = dequePositions[id] {
-                        let initialValues = dequeInitialValues.isEmpty ? 
-                            [""] : 
-                            dequeInitialValues
-                                .replacingOccurrences(of: "[", with: "")
-                                .replacingOccurrences(of: "]", with: "")
-                                .split(separator: ",")
-                                .map { $0.trimmingCharacters(in: .whitespaces) }
-                        DequeView(
-                            initialPosition: position,
-                            initialValues: initialValues,
-                            positions: $dequePositions,
-                            isDraggingOverBin: $isDraggingOverBin,
-                            binAnimation: $binAnimation,
-                            id: id
-                        )
-                    }
+                if showDataStructuresOnTop {
+                    // Data Structures Layer
+                    dataStructuresLayer
                 }
                 
-                // Display GridViews with deletion detection
-                ForEach(Array(gridPositions.keys), id: \.self) { id in
-                    if let position = gridPositions[id] {
-                        GridView(
-                            initialPosition: position,
-                            arrayFormat: gridArrayInput,
-                            positions: $gridPositions,
-                            isDraggingOverBin: $isDraggingOverBin,
-                            binAnimation: $binAnimation,
-                            id: id
-                        )
-                    }
-                }
-                
-                // Add bin at bottom right corner
+                // Bin Layer (always on top)
                 VStack {
                     Spacer()
                     HStack {
@@ -1059,9 +1041,63 @@ struct ContentView: View {
             redoStack.removeAll()
         }
     }
+    
+    private var dataStructuresLayer: some View {
+        ZStack {
+            // Display DequeViews
+            ForEach(Array(dequePositions.keys), id: \.self) { id in
+                if let position = dequePositions[id] {
+                    let initialValues = dequeInitialValues.isEmpty ? 
+                        [""] : 
+                        dequeInitialValues
+                            .replacingOccurrences(of: "[", with: "")
+                            .replacingOccurrences(of: "]", with: "")
+                            .split(separator: ",")
+                            .map { $0.trimmingCharacters(in: .whitespaces) }
+                    DequeView(
+                        initialPosition: position,
+                        initialValues: initialValues,
+                        positions: $dequePositions,
+                        isDraggingOverBin: $isDraggingOverBin,
+                        binAnimation: $binAnimation,
+                        id: id
+                    )
+                }
+            }
+            
+            // Display GridViews
+            ForEach(Array(gridPositions.keys), id: \.self) { id in
+                if let position = gridPositions[id] {
+                    GridView(
+                        initialPosition: position,
+                        arrayFormat: gridArrayInput,
+                        positions: $gridPositions,
+                        isDraggingOverBin: $isDraggingOverBin,
+                        binAnimation: $binAnimation,
+                        id: id
+                    )
+                }
+            }
+        }
+    }
 }
 
 #Preview {
     ContentView()
 }
 
+struct ImageToggleStyle: ToggleStyle {
+    let image: String
+    
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 3) {  // Added small spacing for visual balance
+            Image(systemName: image)
+                .foregroundColor(.gray)
+                .font(.system(size: 16))  // Adjust image size
+                .frame(width: 20)  // Fixed width for consistency
+            Toggle("", isOn: configuration.$isOn)
+                .labelsHidden()
+                .scaleEffect(0.8)  // Scale down the toggle slightly
+        }
+    }
+}
