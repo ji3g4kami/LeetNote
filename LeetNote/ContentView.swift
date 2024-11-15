@@ -8,6 +8,11 @@ struct Line {
     var text: String?
 }
 
+enum GridOrientation {
+    case rowByCol
+    case colByRow
+}
+
 enum DrawingTool {
     case pen
     case eraser
@@ -190,20 +195,34 @@ struct GridView: View {
     @Binding var isDraggingOverBin: Bool
     @Binding var binAnimation: Bool
     let id: UUID
+    let orientation: GridOrientation
     
     init(initialPosition: CGPoint,
          arrayFormat: String,
          positions: Binding<[UUID: CGPoint]>,
          isDraggingOverBin: Binding<Bool>,
          binAnimation: Binding<Bool>,
-         id: UUID) {
+         id: UUID,
+         orientation: GridOrientation = .rowByCol) {
         _position = State(initialValue: initialPosition)
+        
+        self.orientation = orientation
         
         // Parse array format input [[1,2],[3,4]]
         let parsedValues = GridView.parseArrayFormat(arrayFormat)
-        _values = State(initialValue: parsedValues)
-        _rows = State(initialValue: parsedValues.count)
-        _cols = State(initialValue: parsedValues.first?.count ?? 0)
+        
+        switch orientation {
+        case .rowByCol:
+            _values = State(initialValue: parsedValues)
+            _rows = State(initialValue: parsedValues.count)
+            _cols = State(initialValue: parsedValues.first?.count ?? 0)
+        case .colByRow:
+            // Transpose the array for col×row orientation
+            let transposed = GridView.transpose(parsedValues)
+            _values = State(initialValue: transposed)
+            _rows = State(initialValue: transposed.count)
+            _cols = State(initialValue: transposed.first?.count ?? 0)
+        }
         _positions = positions
         _isDraggingOverBin = isDraggingOverBin
         _binAnimation = binAnimation
@@ -330,6 +349,15 @@ struct GridView: View {
         
         return [[]]  // Return empty grid if parsing fails
     }
+    
+    static func transpose(_ array: [[String]]) -> [[String]] {
+        guard let firstRow = array.first else { return [[]] }
+        return (0..<firstRow.count).map { colIndex in
+            array.map { row in
+                colIndex < row.count ? row[colIndex] : ""
+            }
+        }
+    }
 }
 
 struct ContentView: View {
@@ -358,6 +386,7 @@ struct ContentView: View {
     @State private var isDraggingOverBin = false
     @State private var binAnimation = false
     @State private var showDataStructuresOnTop = true
+    @State private var gridOrientation: GridOrientation = .rowByCol
     
     var body: some View {
         VStack {
@@ -629,13 +658,25 @@ struct ContentView: View {
         }
         .alert("Create Grid", isPresented: $isShowingGridAlert) {
             TextField("Array (e.g., [[1,2],[3,4]])", text: $gridArrayInput)
-            Button("OK") {
+            
+            Button("Row × Col") {
                 if let position = pendingGridPosition {
                     let id = UUID()
+                    gridOrientation = .rowByCol
                     gridPositions[id] = position
                 }
                 pendingGridPosition = nil
             }
+            
+            Button("Col × Row") {
+                if let position = pendingGridPosition {
+                    let id = UUID()
+                    gridOrientation = .colByRow
+                    gridPositions[id] = position
+                }
+                pendingGridPosition = nil
+            }
+            
             Button("Cancel", role: .cancel) {
                 gridArrayInput = ""
                 pendingGridPosition = nil
@@ -1074,7 +1115,8 @@ struct ContentView: View {
                         positions: $gridPositions,
                         isDraggingOverBin: $isDraggingOverBin,
                         binAnimation: $binAnimation,
-                        id: id
+                        id: id,
+                        orientation: gridOrientation
                     )
                 }
             }
