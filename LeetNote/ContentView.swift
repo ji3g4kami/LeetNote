@@ -188,8 +188,17 @@ struct GridView: View {
     @State private var values: [[String]]
     @State private var rows: Int
     @State private var cols: Int
+    @Binding var positions: [UUID: CGPoint]
+    @Binding var isDraggingOverBin: Bool
+    @Binding var binAnimation: Bool
+    let id: UUID
     
-    init(initialPosition: CGPoint, arrayFormat: String) {
+    init(initialPosition: CGPoint,
+         arrayFormat: String,
+         positions: Binding<[UUID: CGPoint]>,
+         isDraggingOverBin: Binding<Bool>,
+         binAnimation: Binding<Bool>,
+         id: UUID) {
         _position = State(initialValue: initialPosition)
         
         // Parse array format input [[1,2],[3,4]]
@@ -197,15 +206,75 @@ struct GridView: View {
         _values = State(initialValue: parsedValues)
         _rows = State(initialValue: parsedValues.count)
         _cols = State(initialValue: parsedValues.first?.count ?? 0)
+        _positions = positions
+        _isDraggingOverBin = isDraggingOverBin
+        _binAnimation = binAnimation
+        self.id = id
     }
     
     var body: some View {
         let dragGesture = DragGesture()
             .onChanged { value in
-                self.position = CGPoint(
+                let newPosition = CGPoint(
                     x: value.location.x,
                     y: value.location.y
                 )
+                position = newPosition
+                positions[id] = newPosition
+                
+                // Calculate grid's frame
+                let gridWidth = CGFloat(cols * 40)
+                let gridHeight = CGFloat(rows * 40)
+                let gridFrame = CGRect(
+                    x: newPosition.x - gridWidth/2,
+                    y: newPosition.y - gridHeight/2,
+                    width: gridWidth,
+                    height: gridHeight
+                )
+                
+                // Bin area
+                let binArea = CGRect(
+                    x: UIScreen.main.bounds.width - 150,
+                    y: UIScreen.main.bounds.height - 150,
+                    width: 150,
+                    height: 150
+                )
+                
+                if gridFrame.intersects(binArea) {
+                    isDraggingOverBin = true
+                    binAnimation = true
+                } else {
+                    isDraggingOverBin = false
+                    binAnimation = false
+                }
+            }
+            .onEnded { value in
+                let gridWidth = CGFloat(cols * 40)
+                let gridHeight = CGFloat(rows * 40)
+                let gridFrame = CGRect(
+                    x: value.location.x - gridWidth/2,
+                    y: value.location.y - gridHeight/2,
+                    width: gridWidth,
+                    height: gridHeight
+                )
+                
+                let binArea = CGRect(
+                    x: UIScreen.main.bounds.width - 150,
+                    y: UIScreen.main.bounds.height - 150,
+                    width: 150,
+                    height: 150
+                )
+                
+                if gridFrame.intersects(binArea) {
+                    withAnimation {
+                        positions.removeValue(forKey: id)
+                        binAnimation = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            binAnimation = false
+                        }
+                    }
+                }
+                isDraggingOverBin = false
             }
         
         return VStack(spacing: 1) {
@@ -455,26 +524,12 @@ struct ContentView: View {
                     if let position = gridPositions[id] {
                         GridView(
                             initialPosition: position,
-                            arrayFormat: gridArrayInput
+                            arrayFormat: gridArrayInput,
+                            positions: $gridPositions,
+                            isDraggingOverBin: $isDraggingOverBin,
+                            binAnimation: $binAnimation,
+                            id: id
                         )
-                        .onChange(of: position) { newPosition in
-                            // Check if dragged over bin
-                            let binArea = CGRect(x: UIScreen.main.bounds.width - 100,
-                                               y: UIScreen.main.bounds.height - 100,
-                                               width: 100,
-                                               height: 100)
-                            if binArea.contains(CGPoint(x: newPosition.x, y: newPosition.y)) {
-                                isDraggingOverBin = true
-                                withAnimation {
-                                    gridPositions.removeValue(forKey: id)
-                                    binAnimation = true
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                        binAnimation = false
-                                    }
-                                }
-                            }
-                            isDraggingOverBin = false
-                        }
                     }
                 }
                 
