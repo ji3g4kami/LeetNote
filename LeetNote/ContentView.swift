@@ -26,27 +26,25 @@ enum DrawingTool {
     case grid
 }
 
+// Add this new class to store deque data
+class DequeData: ObservableObject, Identifiable {
+    let id: UUID
+    @Published var position: CGPoint
+    @Published var values: [String]
+    
+    init(id: UUID, position: CGPoint, initialValues: [String]) {
+        self.id = id
+        self.position = position
+        self.values = initialValues
+    }
+}
+
 struct DequeView: View {
-    @State private var position: CGPoint
-    @State private var values: [String]
+    @ObservedObject var dequeData: DequeData
     @Binding var positions: [UUID: CGPoint]
     @Binding var isDraggingOverBin: Bool
     @Binding var binAnimation: Bool
-    let id: UUID
-    
-    init(initialPosition: CGPoint, 
-         initialValues: [String] = [""], 
-         positions: Binding<[UUID: CGPoint]>, 
-         isDraggingOverBin: Binding<Bool>,
-         binAnimation: Binding<Bool>,
-         id: UUID) {
-        _position = State(initialValue: initialPosition)
-        _values = State(initialValue: initialValues)
-        _positions = positions
-        _isDraggingOverBin = isDraggingOverBin
-        _binAnimation = binAnimation
-        self.id = id
-    }
+    @Binding var deques: [DequeData]
     
     var body: some View {
         let dragGesture = DragGesture()
@@ -55,14 +53,14 @@ struct DequeView: View {
                     x: value.location.x,
                     y: value.location.y
                 )
-                position = newPosition
-                positions[id] = newPosition
+                dequeData.position = newPosition
+                positions[dequeData.id] = newPosition
                 
                 // Get the window bounds
                 let windowBounds = UIScreen.main.bounds
                 
                 // Calculate object bounds (approximate size based on content)
-                let objectWidth: CGFloat = CGFloat(values.count) * 40 + 60 // 40 per cell + padding for buttons
+                let objectWidth: CGFloat = CGFloat(dequeData.values.count) * 40 + 60 // 40 per cell + padding for buttons
                 let objectHeight: CGFloat = 60 // Approximate height including buttons
                 let objectBounds = CGRect(
                     x: newPosition.x - objectWidth/2,
@@ -92,7 +90,7 @@ struct DequeView: View {
                 let windowBounds = UIScreen.main.bounds
                 
                 // Calculate object bounds
-                let objectWidth: CGFloat = CGFloat(values.count) * 40 + 60
+                let objectWidth: CGFloat = CGFloat(dequeData.values.count) * 40 + 60
                 let objectHeight: CGFloat = 60
                 let objectBounds = CGRect(
                     x: value.location.x - objectWidth/2,
@@ -111,7 +109,10 @@ struct DequeView: View {
                 
                 if deleteZone.intersects(objectBounds) {
                     withAnimation {
-                        positions.removeValue(forKey: id)
+                        positions.removeValue(forKey: dequeData.id)
+                        if let index = deques.firstIndex(where: { $0.id == dequeData.id }) {
+                            deques.remove(at: index)
+                        }
                         binAnimation = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             binAnimation = false
@@ -125,15 +126,15 @@ struct DequeView: View {
             // Front controls
             VStack(spacing: 4) {
                 Button(action: {
-                    if !values.isEmpty {
-                        values.removeFirst()
+                    if !dequeData.values.isEmpty {
+                        dequeData.values.removeFirst()
                     }
                 }) {
                     Image(systemName: "minus.circle.fill")
                         .foregroundColor(.red)
                 }
                 Button(action: {
-                    values.insert("", at: 0)
+                    dequeData.values.insert("", at: 0)
                 }) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(.blue)
@@ -144,13 +145,13 @@ struct DequeView: View {
             
             // Deque cells
             HStack(spacing: 1) {
-                ForEach(values.indices, id: \.self) { index in
+                ForEach(Array(dequeData.values.enumerated()), id: \.offset) { index, value in
                     Rectangle()
                         .stroke(Color.black, lineWidth: 1)
                         .overlay(
                             TextField("", text: Binding(
-                                get: { values[index] },
-                                set: { values[index] = $0 }
+                                get: { value },
+                                set: { dequeData.values[index] = $0 }
                             ))
                             .multilineTextAlignment(.center)
                         )
@@ -162,15 +163,15 @@ struct DequeView: View {
             // Back controls
             VStack(spacing: 4) {
                 Button(action: {
-                    if !values.isEmpty {
-                        values.removeLast()
+                    if !dequeData.values.isEmpty {
+                        dequeData.values.removeLast()
                     }
                 }) {
                     Image(systemName: "minus.circle.fill")
                         .foregroundColor(.red)
                 }
                 Button(action: {
-                    values.append("")
+                    dequeData.values.append("")
                 }) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(.blue)
@@ -179,7 +180,7 @@ struct DequeView: View {
             .offset(x: -10)
             .zIndex(1)
         }
-        .position(x: position.x, y: position.y)
+        .position(x: dequeData.position.x, y: dequeData.position.y)
         .gesture(dragGesture)
     }
 }
@@ -388,6 +389,7 @@ struct ContentView: View {
     @State private var binAnimation = false
     @State private var showDataStructuresOnTop = true
     @State private var gridOrientation: GridOrientation = .rowByCol
+    @State private var deques: [DequeData] = []
     
     var body: some View {
         VStack {
@@ -627,9 +629,19 @@ struct ContentView: View {
             Button("OK") {
                 if let position = pendingDequePosition {
                     let id = UUID()
+                    let initialValues = dequeInitialValues.isEmpty ? 
+                        [""] : 
+                        dequeInitialValues
+                            .replacingOccurrences(of: "[", with: "")
+                            .replacingOccurrences(of: "]", with: "")
+                            .split(separator: ",")
+                            .map { $0.trimmingCharacters(in: .whitespaces) }
+                    let dequeData = DequeData(id: id, position: position, initialValues: initialValues)
+                    deques.append(dequeData)
                     dequePositions[id] = position
                 }
                 pendingDequePosition = nil
+                dequeInitialValues = ""
             }
             Button("Cancel", role: .cancel) {
                 dequeInitialValues = ""
@@ -1126,23 +1138,15 @@ struct ContentView: View {
     
     private var dataStructuresLayer: some View {
         ZStack {
-            // Display DequeViews
-            ForEach(Array(dequePositions.keys), id: \.self) { id in
-                if let position = dequePositions[id] {
-                    let initialValues = dequeInitialValues.isEmpty ? 
-                        [""] : 
-                        dequeInitialValues
-                            .replacingOccurrences(of: "[", with: "")
-                            .replacingOccurrences(of: "]", with: "")
-                            .split(separator: ",")
-                            .map { $0.trimmingCharacters(in: .whitespaces) }
+            // Modify the DequeView creation
+            ForEach(deques) { dequeData in
+                if dequePositions[dequeData.id] != nil {
                     DequeView(
-                        initialPosition: position,
-                        initialValues: initialValues,
+                        dequeData: dequeData,
                         positions: $dequePositions,
                         isDraggingOverBin: $isDraggingOverBin,
                         binAnimation: $binAnimation,
-                        id: id
+                        deques: $deques
                     )
                 }
             }
