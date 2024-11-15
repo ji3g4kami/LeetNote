@@ -51,30 +51,30 @@ struct DequeView: View {
                 )
                 position = newPosition
                 positions[id] = newPosition
-                print("Deque moved to: \(newPosition)")
                 
-                // Calculate deque's frame (assuming deque size based on number of cells)
-                let dequeWidth = CGFloat(values.count * 40) + 40  // 40 per cell + padding
-                let dequeHeight = CGFloat(60)  // Fixed height
-                let dequeFrame = CGRect(
-                    x: newPosition.x - dequeWidth/2,
-                    y: newPosition.y - dequeHeight/2,
-                    width: dequeWidth,
-                    height: dequeHeight
+                // Get the window bounds
+                let windowBounds = UIScreen.main.bounds
+                
+                // Calculate object bounds (approximate size based on content)
+                let objectWidth: CGFloat = CGFloat(values.count) * 40 + 60 // 40 per cell + padding for buttons
+                let objectHeight: CGFloat = 60 // Approximate height including buttons
+                let objectBounds = CGRect(
+                    x: newPosition.x - objectWidth/2,
+                    y: newPosition.y - objectHeight/2,
+                    width: objectWidth,
+                    height: objectHeight
                 )
-                print("Deque frame: \(dequeFrame)")
                 
-                // Bin area
-                let binArea = CGRect(
-                    x: UIScreen.main.bounds.width - 150,
-                    y: UIScreen.main.bounds.height - 150,
-                    width: 150,
-                    height: 150
+                // Define deletion zone in bottom-right corner
+                let deleteZone = CGRect(
+                    x: windowBounds.width * 0.8,
+                    y: windowBounds.height * 0.8,
+                    width: windowBounds.width * 0.2,
+                    height: windowBounds.height * 0.2
                 )
-                print("Bin area: \(binArea)")
                 
-                if dequeFrame.intersects(binArea) {
-                    print("Deque is overlapping with bin!")
+                // Check if the object's bounds intersect with the deletion zone
+                if deleteZone.intersects(objectBounds) {
                     isDraggingOverBin = true
                     binAnimation = true
                 } else {
@@ -83,31 +83,29 @@ struct DequeView: View {
                 }
             }
             .onEnded { value in
-                print("Drag ended at: \(value.location)")
+                let windowBounds = UIScreen.main.bounds
                 
-                // Calculate deque's final frame
-                let dequeWidth = CGFloat(values.count * 40) + 40
-                let dequeHeight = CGFloat(60)
-                let dequeFrame = CGRect(
-                    x: value.location.x - dequeWidth/2,
-                    y: value.location.y - dequeHeight/2,
-                    width: dequeWidth,
-                    height: dequeHeight
+                // Calculate object bounds
+                let objectWidth: CGFloat = CGFloat(values.count) * 40 + 60
+                let objectHeight: CGFloat = 60
+                let objectBounds = CGRect(
+                    x: value.location.x - objectWidth/2,
+                    y: value.location.y - objectHeight/2,
+                    width: objectWidth,
+                    height: objectHeight
                 )
                 
-                let binArea = CGRect(
-                    x: UIScreen.main.bounds.width - 150,
-                    y: UIScreen.main.bounds.height - 150,
-                    width: 150,
-                    height: 150
+                // Define deletion zone
+                let deleteZone = CGRect(
+                    x: windowBounds.width * 0.8,
+                    y: windowBounds.height * 0.8,
+                    width: windowBounds.width * 0.2,
+                    height: windowBounds.height * 0.2
                 )
                 
-                if dequeFrame.intersects(binArea) {
-                    print("Deque released over bin!")
+                if deleteZone.intersects(objectBounds) {
                     withAnimation {
-                        print("Removing deque with id: \(id)")
                         positions.removeValue(forKey: id)
-                        print("Deques remaining after removal: \(positions.count)")
                         binAnimation = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             binAnimation = false
@@ -222,25 +220,29 @@ struct GridView: View {
                 position = newPosition
                 positions[id] = newPosition
                 
-                // Calculate grid's frame
-                let gridWidth = CGFloat(cols * 40)
-                let gridHeight = CGFloat(rows * 40)
-                let gridFrame = CGRect(
-                    x: newPosition.x - gridWidth/2,
-                    y: newPosition.y - gridHeight/2,
-                    width: gridWidth,
-                    height: gridHeight
+                // Get the window bounds
+                let windowBounds = UIScreen.main.bounds
+                
+                // Calculate object bounds
+                let objectWidth: CGFloat = CGFloat(cols) * 40 // 40 per cell
+                let objectHeight: CGFloat = CGFloat(rows) * 40
+                let objectBounds = CGRect(
+                    x: newPosition.x - objectWidth/2,
+                    y: newPosition.y - objectHeight/2,
+                    width: objectWidth,
+                    height: objectHeight
                 )
                 
-                // Bin area
-                let binArea = CGRect(
-                    x: UIScreen.main.bounds.width - 150,
-                    y: UIScreen.main.bounds.height - 150,
-                    width: 150,
-                    height: 150
+                // Define deletion zone in bottom-right corner
+                let deleteZone = CGRect(
+                    x: windowBounds.width * 0.8,
+                    y: windowBounds.height * 0.8,
+                    width: windowBounds.width * 0.2,
+                    height: windowBounds.height * 0.2
                 )
                 
-                if gridFrame.intersects(binArea) {
+                // Check if the object's bounds intersect with the deletion zone
+                if deleteZone.intersects(objectBounds) {
                     isDraggingOverBin = true
                     binAnimation = true
                 } else {
@@ -249,23 +251,27 @@ struct GridView: View {
                 }
             }
             .onEnded { value in
-                let gridWidth = CGFloat(cols * 40)
-                let gridHeight = CGFloat(rows * 40)
-                let gridFrame = CGRect(
-                    x: value.location.x - gridWidth/2,
-                    y: value.location.y - gridHeight/2,
-                    width: gridWidth,
-                    height: gridHeight
+                let windowBounds = UIScreen.main.bounds
+                
+                // Calculate object bounds
+                let objectWidth: CGFloat = CGFloat(cols) * 40
+                let objectHeight: CGFloat = CGFloat(rows) * 40
+                let objectBounds = CGRect(
+                    x: value.location.x - objectWidth/2,
+                    y: value.location.y - objectHeight/2,
+                    width: objectWidth,
+                    height: objectHeight
                 )
                 
-                let binArea = CGRect(
-                    x: UIScreen.main.bounds.width - 150,
-                    y: UIScreen.main.bounds.height - 150,
-                    width: 150,
-                    height: 150
+                // Define deletion zone
+                let deleteZone = CGRect(
+                    x: windowBounds.width * 0.8,
+                    y: windowBounds.height * 0.8,
+                    width: windowBounds.width * 0.2,
+                    height: windowBounds.height * 0.2
                 )
                 
-                if gridFrame.intersects(binArea) {
+                if deleteZone.intersects(objectBounds) {
                     withAnimation {
                         positions.removeValue(forKey: id)
                         binAnimation = true
