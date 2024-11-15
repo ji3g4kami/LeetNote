@@ -21,6 +21,7 @@ enum DrawingTool {
     case arrow
     case text
     case selection
+    case hand
     case deque
     case grid
 }
@@ -393,14 +394,16 @@ struct ContentView: View {
             // Toolbar
             HStack {
                 // Drawing tools
-                ForEach([DrawingTool.pen, .eraser, .rectangle, .circle, .arrow, .text, .selection, .deque, .grid], id: \.self) { tool in
+                ForEach([DrawingTool.pen, .eraser, .rectangle, .circle, .arrow, .text, .selection, .hand, .deque, .grid], id: \.self) { tool in
                     Button(action: {
                         // Save current text if exists
                         saveCurrentText()
                         
                         // Switch tool and clean up
                         selectedTool = tool
-                        selectedElements.removeAll()
+                        if tool != .hand {
+                            selectedElements.removeAll()
+                        }
                         isShowingTextField = false
                         currentText = ""
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
@@ -684,6 +687,12 @@ struct ContentView: View {
         } message: {
             Text("Enter array in format [[1,2],[3,4]]")
         }
+        .onChange(of: dequePositions) { _, _ in
+            selectedTool = .hand
+        }
+        .onChange(of: gridPositions) { _, _ in
+            selectedTool = .hand
+        }
     }
     
     private func toolIcon(for tool: DrawingTool) -> String {
@@ -695,31 +704,43 @@ struct ContentView: View {
         case .arrow: return "arrow.right"
         case .text: return "text.cursor"
         case .selection: return "lasso"
+        case .hand: return "hand.draw"
         case .deque: return "rectangle.split.3x1"
         case .grid: return "rectangle.split.3x3"
         }
     }
     
     private func handleDragChange(_ value: DragGesture.Value) {
-        let point = value.location
-        if currentLine == nil {
-            currentLine = Line(points: [point], color: selectedColor, lineWidth: lineWidth, tool: selectedTool)
+        if selectedTool == .hand && !selectedElements.isEmpty {
+            // Handle dragging selected elements with hand tool
+            dragOffset = value.translation
         } else {
-            currentLine?.points.append(point)
+            let point = value.location
+            if currentLine == nil {
+                currentLine = Line(points: [point], color: selectedColor, lineWidth: lineWidth, tool: selectedTool)
+            } else {
+                currentLine?.points.append(point)
+            }
         }
     }
     
     private func handleDragEnd(_ value: DragGesture.Value) {
-        if let line = currentLine {
-            undoStack.append(lines)
-            redoStack.removeAll()
-            lines.append(line)
+        if selectedTool == .hand && !selectedElements.isEmpty {
+            // Apply the drag to selected elements
+            applyDragToSelected()
+            dragOffset = .zero
+        } else {
+            if let line = currentLine {
+                undoStack.append(lines)
+                redoStack.removeAll()
+                lines.append(line)
+            }
+            currentLine = nil
         }
-        currentLine = nil
     }
     
     private func handleTap(at location: CGPoint) {
-        if selectedTool == .selection {
+        if selectedTool == .selection || selectedTool == .hand {
             var tappedSelectedElement = false
             
             // Check if tap is inside any selected element
@@ -741,16 +762,19 @@ struct ContentView: View {
             if !tappedSelectedElement {
                 selectedElements.removeAll()
                 
-                // Try to select new element at tap location
-                for (index, line) in lines.enumerated().reversed() {
-                    let bounds = line.points.reduce(CGRect.null) { rect, point in
-                        rect.union(CGRect(x: point.x, y: point.y, width: 1, height: 1))
-                    }
-                    let selectionRect = bounds.insetBy(dx: -10, dy: -10)
-                    
-                    if selectionRect.contains(location) {
-                        selectedElements.insert(index)
-                        return
+                // Only try to select new elements if using selection tool
+                if selectedTool == .selection {
+                    // Try to select new element at tap location
+                    for (index, line) in lines.enumerated().reversed() {
+                        let bounds = line.points.reduce(CGRect.null) { rect, point in
+                            rect.union(CGRect(x: point.x, y: point.y, width: 1, height: 1))
+                        }
+                        let selectionRect = bounds.insetBy(dx: -10, dy: -10)
+                        
+                        if selectionRect.contains(location) {
+                            selectedElements.insert(index)
+                            return
+                        }
                     }
                 }
             }
@@ -864,7 +888,7 @@ struct ContentView: View {
         case .deque:
             // No need to draw anything here since deques are handled by DequeView
             break
-        case .grid:
+        case .grid, .hand:
             // No need to draw anything here since grids are handled by GridView
             break
         }
@@ -958,7 +982,7 @@ struct ContentView: View {
                 
             case .selection:
                 break // Don't draw selection indicator for selection tool itself
-            case .grid:
+            case .grid, .hand:
                 // No need for selection indicator since grids are handled by GridView
                 break
             }
@@ -1027,6 +1051,11 @@ struct ContentView: View {
             if isLine(line, intersectingWith: selectionRect) {
                 selectedElements.insert(index)
             }
+        }
+        
+        // Switch to hand tool after making a selection
+        if !selectedElements.isEmpty {
+            selectedTool = .hand
         }
     }
     
