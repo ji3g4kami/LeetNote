@@ -666,8 +666,8 @@ struct ContentView: View {
         case .arrow: return "arrow.right"
         case .text: return "text.cursor"
         case .selection: return "lasso"
-        case .deque: return "square.stack"
-        case .grid: return "grid"
+        case .deque: return "rectangle.split.3x1"
+        case .grid: return "rectangle.split.3x3"
         }
     }
     
