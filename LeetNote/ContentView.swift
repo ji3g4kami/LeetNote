@@ -1083,6 +1083,10 @@ struct ContentView: View {
         undoStack.append(lines)
         redoStack.removeAll()
         
+        // Get the current number of lines before adding copies
+        let startIndex = lines.count
+        
+        // Create and add copies
         let newElements = selectedElements.map { lines[$0] }.map { line -> Line in
             var newLine = line
             newLine.points = line.points.map { CGPoint(
@@ -1093,7 +1097,15 @@ struct ContentView: View {
         }
         
         lines.append(contentsOf: newElements)
+        
+        // Clear old selection and select the newly copied elements
         selectedElements.removeAll()
+        for i in 0..<newElements.count {
+            selectedElements.insert(startIndex + i)
+        }
+        
+        // Switch to hand tool to move the copies
+        selectedTool = .hand
     }
     
     // Add this function to save the current text
