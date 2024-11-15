@@ -501,8 +501,8 @@ struct ContentView: View {
                 // Display DequeViews with deletion detection
                 ForEach(Array(dequePositions.keys), id: \.self) { id in
                     if let position = dequePositions[id] {
-                        let initialValues = dequeInitialValues.isEmpty ?
-                            [""] :
+                        let initialValues = dequeInitialValues.isEmpty ? 
+                            [""] : 
                             dequeInitialValues
                                 .replacingOccurrences(of: "[", with: "")
                                 .replacingOccurrences(of: "]", with: "")
@@ -588,7 +588,7 @@ struct ContentView: View {
                 HStack {
                     TextField("Enter text", text: $currentText)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .onChange(of: currentText) { newValue in
+                        .onChange(of: currentText) { oldValue, newValue in
                             var updatedLine = lines[index]
                             updatedLine.text = newValue
                             lines[index] = updatedLine
