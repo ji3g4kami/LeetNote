@@ -23,19 +23,98 @@ enum DrawingTool {
 struct DequeView: View {
     @State private var position: CGPoint
     @State private var values: [String]
+    @Binding var positions: [UUID: CGPoint]
+    @Binding var isDraggingOverBin: Bool
+    @Binding var binAnimation: Bool
+    let id: UUID
     
-    init(initialPosition: CGPoint, initialValues: [String] = [""]) {
+    init(initialPosition: CGPoint, 
+         initialValues: [String] = [""], 
+         positions: Binding<[UUID: CGPoint]>, 
+         isDraggingOverBin: Binding<Bool>,
+         binAnimation: Binding<Bool>,
+         id: UUID) {
         _position = State(initialValue: initialPosition)
         _values = State(initialValue: initialValues)
+        _positions = positions
+        _isDraggingOverBin = isDraggingOverBin
+        _binAnimation = binAnimation
+        self.id = id
     }
     
     var body: some View {
         let dragGesture = DragGesture()
             .onChanged { value in
-                self.position = CGPoint(
+                let newPosition = CGPoint(
                     x: value.location.x,
                     y: value.location.y
                 )
+                position = newPosition
+                positions[id] = newPosition
+                print("Deque moved to: \(newPosition)")
+                
+                // Calculate deque's frame (assuming deque size based on number of cells)
+                let dequeWidth = CGFloat(values.count * 40) + 40  // 40 per cell + padding
+                let dequeHeight = CGFloat(60)  // Fixed height
+                let dequeFrame = CGRect(
+                    x: newPosition.x - dequeWidth/2,
+                    y: newPosition.y - dequeHeight/2,
+                    width: dequeWidth,
+                    height: dequeHeight
+                )
+                print("Deque frame: \(dequeFrame)")
+                
+                // Bin area
+                let binArea = CGRect(
+                    x: UIScreen.main.bounds.width - 150,
+                    y: UIScreen.main.bounds.height - 150,
+                    width: 150,
+                    height: 150
+                )
+                print("Bin area: \(binArea)")
+                
+                if dequeFrame.intersects(binArea) {
+                    print("Deque is overlapping with bin!")
+                    isDraggingOverBin = true
+                    binAnimation = true
+                } else {
+                    isDraggingOverBin = false
+                    binAnimation = false
+                }
+            }
+            .onEnded { value in
+                print("Drag ended at: \(value.location)")
+                
+                // Calculate deque's final frame
+                let dequeWidth = CGFloat(values.count * 40) + 40
+                let dequeHeight = CGFloat(60)
+                let dequeFrame = CGRect(
+                    x: value.location.x - dequeWidth/2,
+                    y: value.location.y - dequeHeight/2,
+                    width: dequeWidth,
+                    height: dequeHeight
+                )
+                
+                let binArea = CGRect(
+                    x: UIScreen.main.bounds.width - 150,
+                    y: UIScreen.main.bounds.height - 150,
+                    width: 150,
+                    height: 150
+                )
+                
+                if dequeFrame.intersects(binArea) {
+                    print("Deque released over bin!")
+                    withAnimation {
+                        print("Removing deque with id: \(id)")
+                        positions.removeValue(forKey: id)
+                        print("Deques remaining after removal: \(positions.count)")
+                        binAnimation = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            binAnimation = false
+                        }
+                    }
+                }
+                isDraggingOverBin = false
             }
         
         return HStack(spacing: 1) {
@@ -201,6 +280,8 @@ struct ContentView: View {
     @State private var isShowingGridAlert = false
     @State private var gridArrayInput = ""
     @State private var pendingGridPosition: CGPoint?
+    @State private var isDraggingOverBin = false
+    @State private var binAnimation = false
     
     var body: some View {
         VStack {
@@ -348,27 +429,66 @@ struct ContentView: View {
                         }
                 )
                 
-                // Display DequeViews
+                // Display DequeViews with deletion detection
                 ForEach(Array(dequePositions.keys), id: \.self) { id in
                     if let position = dequePositions[id] {
-                        let initialValues = dequeInitialValues.isEmpty ? 
-                            [""] : 
+                        let initialValues = dequeInitialValues.isEmpty ?
+                            [""] :
                             dequeInitialValues
                                 .replacingOccurrences(of: "[", with: "")
                                 .replacingOccurrences(of: "]", with: "")
                                 .split(separator: ",")
                                 .map { $0.trimmingCharacters(in: .whitespaces) }
-                        DequeView(initialPosition: position, initialValues: initialValues)
+                        DequeView(
+                            initialPosition: position,
+                            initialValues: initialValues,
+                            positions: $dequePositions,
+                            isDraggingOverBin: $isDraggingOverBin,
+                            binAnimation: $binAnimation,
+                            id: id
+                        )
                     }
                 }
                 
-                // Display GridViews
+                // Display GridViews with deletion detection
                 ForEach(Array(gridPositions.keys), id: \.self) { id in
                     if let position = gridPositions[id] {
                         GridView(
                             initialPosition: position,
                             arrayFormat: gridArrayInput
                         )
+                        .onChange(of: position) { newPosition in
+                            // Check if dragged over bin
+                            let binArea = CGRect(x: UIScreen.main.bounds.width - 100,
+                                               y: UIScreen.main.bounds.height - 100,
+                                               width: 100,
+                                               height: 100)
+                            if binArea.contains(CGPoint(x: newPosition.x, y: newPosition.y)) {
+                                isDraggingOverBin = true
+                                withAnimation {
+                                    gridPositions.removeValue(forKey: id)
+                                    binAnimation = true
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                        binAnimation = false
+                                    }
+                                }
+                            }
+                            isDraggingOverBin = false
+                        }
+                    }
+                }
+                
+                // Add bin at bottom right corner
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Image(systemName: isDraggingOverBin ? "trash.circle.fill" : "trash.circle")
+                            .font(.system(size: 40))
+                            .foregroundColor(isDraggingOverBin ? .red : .gray)
+                            .padding()
+                            .scaleEffect(binAnimation ? 1.2 : 1.0)
+                            .animation(.spring(response: 0.3), value: binAnimation)
                     }
                 }
             }
