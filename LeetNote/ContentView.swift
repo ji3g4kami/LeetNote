@@ -1072,11 +1072,55 @@ struct ContentView: View {
     }
     
     private func isLine(_ line: Line, intersectingWith rect: CGRect) -> Bool {
-        // Simple bounding box check
-        let lineBounds = line.points.reduce(CGRect.null) { rect, point in
-            rect.union(CGRect(x: point.x, y: point.y, width: 1, height: 1))
+        switch line.tool {
+        case .text:
+            // For text, create a more precise selection area
+            if let position = line.points.first {
+                // Approximate text bounds based on the text content
+                let textSize = (line.text ?? "").size(withAttributes: [.font: UIFont.systemFont(ofSize: 17)])
+                let textRect = CGRect(
+                    x: position.x - textSize.width/2,
+                    y: position.y - textSize.height/2,
+                    width: textSize.width,
+                    height: textSize.height
+                )
+                return rect.intersects(textRect)
+            }
+            return false
+            
+        case .pen, .eraser:
+            // For lines, check if any point is within the selection rectangle
+            return line.points.contains { point in
+                rect.contains(point)
+            }
+            
+        case .rectangle, .circle:
+            // For shapes, use the existing bounding box logic
+            if line.points.count >= 2 {
+                let start = line.points.first!
+                let end = line.points.last!
+                let shapeBounds = CGRect(
+                    x: min(start.x, end.x),
+                    y: min(start.y, end.y),
+                    width: abs(end.x - start.x),
+                    height: abs(end.y - start.y)
+                )
+                return rect.intersects(shapeBounds)
+            }
+            return false
+            
+        case .arrow:
+            // For arrows, check if either endpoint is within selection
+            if line.points.count >= 2 {
+                let start = line.points.first!
+                let end = line.points.last!
+                return rect.contains(start) || rect.contains(end)
+            }
+            return false
+            
+        default:
+            return false
         }
-        return rect.intersects(lineBounds)
     }
     
     private func applyDragToSelected() {
