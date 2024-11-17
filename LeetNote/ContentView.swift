@@ -45,143 +45,145 @@ struct DequeView: View {
     @Binding var isDraggingOverBin: Bool
     @Binding var binAnimation: Bool
     @Binding var deques: [DequeData]
+    @Environment(\.displayScale) var displayScale
     
     var body: some View {
-        let dragGesture = DragGesture()
-            .onChanged { value in
-                let newPosition = CGPoint(
-                    x: value.location.x,
-                    y: value.location.y
-                )
-                dequeData.position = newPosition
-                positions[dequeData.id] = newPosition
-                
-                // Get the window bounds
-                let windowBounds = UIScreen.main.bounds
-                
-                // Calculate object bounds (approximate size based on content)
-                let objectWidth: CGFloat = CGFloat(dequeData.values.count) * 40 + 60 // 40 per cell + padding for buttons
-                let objectHeight: CGFloat = 60 // Approximate height including buttons
-                let objectBounds = CGRect(
-                    x: newPosition.x - objectWidth/2,
-                    y: newPosition.y - objectHeight/2,
-                    width: objectWidth,
-                    height: objectHeight
-                )
-                
-                // Define deletion zone in bottom-right corner
-                let deleteZone = CGRect(
-                    x: windowBounds.width * 0.8,
-                    y: windowBounds.height * 0.8,
-                    width: windowBounds.width * 0.2,
-                    height: windowBounds.height * 0.2
-                )
-                
-                // Check if the object's bounds intersect with the deletion zone
-                if deleteZone.intersects(objectBounds) {
-                    isDraggingOverBin = true
-                    binAnimation = true
-                } else {
-                    isDraggingOverBin = false
-                    binAnimation = false
-                }
-            }
-            .onEnded { value in
-                let windowBounds = UIScreen.main.bounds
-                
-                // Calculate object bounds
-                let objectWidth: CGFloat = CGFloat(dequeData.values.count) * 40 + 60
-                let objectHeight: CGFloat = 60
-                let objectBounds = CGRect(
-                    x: value.location.x - objectWidth/2,
-                    y: value.location.y - objectHeight/2,
-                    width: objectWidth,
-                    height: objectHeight
-                )
-                
-                // Define deletion zone
-                let deleteZone = CGRect(
-                    x: windowBounds.width * 0.8,
-                    y: windowBounds.height * 0.8,
-                    width: windowBounds.width * 0.2,
-                    height: windowBounds.height * 0.2
-                )
-                
-                if deleteZone.intersects(objectBounds) {
-                    withAnimation {
-                        positions.removeValue(forKey: dequeData.id)
-                        if let index = deques.firstIndex(where: { $0.id == dequeData.id }) {
-                            deques.remove(at: index)
-                        }
+        GeometryReader { geometry in
+            let dragGesture = DragGesture()
+                .onChanged { value in
+                    let newPosition = CGPoint(
+                        x: value.location.x,
+                        y: value.location.y
+                    )
+                    dequeData.position = newPosition
+                    positions[dequeData.id] = newPosition
+                    
+                    // Use geometry size instead of UIScreen
+                    let windowBounds = CGRect(origin: .zero, size: geometry.size)
+                    
+                    // Calculate object bounds
+                    let objectWidth: CGFloat = CGFloat(dequeData.values.count) * 40 + 60
+                    let objectHeight: CGFloat = 60
+                    let objectBounds = CGRect(
+                        x: newPosition.x - objectWidth/2,
+                        y: newPosition.y - objectHeight/2,
+                        width: objectWidth,
+                        height: objectHeight
+                    )
+                    
+                    // Define deletion zone in bottom-right corner
+                    let deleteZone = CGRect(
+                        x: windowBounds.width * 0.8,
+                        y: windowBounds.height * 0.8,
+                        width: windowBounds.width * 0.2,
+                        height: windowBounds.height * 0.2
+                    )
+                    
+                    if deleteZone.intersects(objectBounds) {
+                        isDraggingOverBin = true
                         binAnimation = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            binAnimation = false
+                    } else {
+                        isDraggingOverBin = false
+                        binAnimation = false
+                    }
+                }
+                .onEnded { value in
+                    let windowBounds = CGRect(origin: .zero, size: geometry.size)
+                    
+                    // Calculate object bounds
+                    let objectWidth: CGFloat = CGFloat(dequeData.values.count) * 40 + 60
+                    let objectHeight: CGFloat = 60
+                    let objectBounds = CGRect(
+                        x: value.location.x - objectWidth/2,
+                        y: value.location.y - objectHeight/2,
+                        width: objectWidth,
+                        height: objectHeight
+                    )
+                    
+                    // Define deletion zone
+                    let deleteZone = CGRect(
+                        x: windowBounds.width * 0.8,
+                        y: windowBounds.height * 0.8,
+                        width: windowBounds.width * 0.2,
+                        height: windowBounds.height * 0.2
+                    )
+                    
+                    if deleteZone.intersects(objectBounds) {
+                        withAnimation {
+                            positions.removeValue(forKey: dequeData.id)
+                            if let index = deques.firstIndex(where: { $0.id == dequeData.id }) {
+                                deques.remove(at: index)
+                            }
+                            binAnimation = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                binAnimation = false
+                            }
                         }
                     }
+                    isDraggingOverBin = false
                 }
-                isDraggingOverBin = false
-            }
-        
-        return HStack(spacing: 1) {
-            // Front controls
-            VStack(spacing: 4) {
-                Button(action: {
-                    if !dequeData.values.isEmpty {
-                        dequeData.values.removeFirst()
-                    }
-                }) {
-                    Image(systemName: "minus.circle.fill")
-                        .foregroundColor(.red)
-                }
-                Button(action: {
-                    dequeData.values.insert("", at: 0)
-                }) {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundColor(.blue)
-                }
-            }
-            .offset(x: 10)
-            .zIndex(1)
-            
-            // Deque cells
+
             HStack(spacing: 1) {
-                ForEach(Array(dequeData.values.enumerated()), id: \.offset) { index, value in
-                    Rectangle()
-                        .stroke(Color.black, lineWidth: 1)
-                        .overlay(
-                            TextField("", text: Binding(
-                                get: { value },
-                                set: { dequeData.values[index] = $0 }
-                            ))
-                            .multilineTextAlignment(.center)
-                        )
-                        .frame(width: 40, height: 40)
-                }
-            }
-            .background(Color(UIColor.systemBackground))
-            
-            // Back controls
-            VStack(spacing: 4) {
-                Button(action: {
-                    if !dequeData.values.isEmpty {
-                        dequeData.values.removeLast()
+                // Front controls
+                VStack(spacing: 4) {
+                    Button(action: {
+                        if !dequeData.values.isEmpty {
+                            dequeData.values.removeFirst()
+                        }
+                    }) {
+                        Image(systemName: "minus.circle.fill")
+                            .foregroundColor(.red)
                     }
-                }) {
-                    Image(systemName: "minus.circle.fill")
-                        .foregroundColor(.red)
+                    Button(action: {
+                        dequeData.values.insert("", at: 0)
+                    }) {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(.blue)
+                    }
                 }
-                Button(action: {
-                    dequeData.values.append("")
-                }) {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundColor(.blue)
+                .offset(x: 10)
+                .zIndex(1)
+                
+                // Deque cells
+                HStack(spacing: 1) {
+                    ForEach(Array(dequeData.values.enumerated()), id: \.offset) { index, value in
+                        Rectangle()
+                            .stroke(Color.black, lineWidth: 1)
+                            .overlay(
+                                TextField("", text: Binding(
+                                    get: { value },
+                                    set: { dequeData.values[index] = $0 }
+                                ))
+                                .multilineTextAlignment(.center)
+                            )
+                            .frame(width: 40, height: 40)
+                    }
                 }
+                .background(Color(UIColor.systemBackground))
+                
+                // Back controls
+                VStack(spacing: 4) {
+                    Button(action: {
+                        if !dequeData.values.isEmpty {
+                            dequeData.values.removeLast()
+                        }
+                    }) {
+                        Image(systemName: "minus.circle.fill")
+                            .foregroundColor(.red)
+                    }
+                    Button(action: {
+                        dequeData.values.append("")
+                    }) {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(.blue)
+                    }
+                }
+                .offset(x: -10)
+                .zIndex(1)
             }
-            .offset(x: -10)
-            .zIndex(1)
+            .position(x: dequeData.position.x, y: dequeData.position.y)
+            .gesture(dragGesture)
         }
-        .position(x: dequeData.position.x, y: dequeData.position.y)
-        .gesture(dragGesture)
     }
 }
 
@@ -232,67 +234,103 @@ struct GridView: View {
     }
     
     var body: some View {
-        let dragGesture = DragGesture()
-            .onChanged { value in
-                let newPosition = CGPoint(
-                    x: value.location.x,
-                    y: value.location.y
-                )
-                position = newPosition
-                positions[id] = newPosition
-                
-                // Get the window bounds
-                let windowBounds = UIScreen.main.bounds
-                
-                // Calculate object bounds
-                let objectWidth: CGFloat = CGFloat(cols) * 40 // 40 per cell
-                let objectHeight: CGFloat = CGFloat(rows) * 40
-                let objectBounds = CGRect(
-                    x: newPosition.x - objectWidth/2,
-                    y: newPosition.y - objectHeight/2,
-                    width: objectWidth,
-                    height: objectHeight
-                )
-                
-                // Define deletion zone in bottom-right corner
-                let deleteZone = CGRect(
-                    x: windowBounds.width * 0.8,
-                    y: windowBounds.height * 0.8,
-                    width: windowBounds.width * 0.2,
-                    height: windowBounds.height * 0.2
-                )
-                
-                // Check if the object's bounds intersect with the deletion zone
-                if deleteZone.intersects(objectBounds) {
-                    isDraggingOverBin = true
-                    binAnimation = true
-                } else {
+        GeometryReader { geometry in
+            let dragGesture = DragGesture()
+                .onChanged { value in
+                    let newPosition = CGPoint(
+                        x: value.location.x,
+                        y: value.location.y
+                    )
+                    position = newPosition
+                    positions[id] = newPosition
+                    
+                    // Use geometry size instead of UIScreen
+                    let windowBounds = CGRect(origin: .zero, size: geometry.size)
+                    
+                    // Calculate object bounds
+                    let objectWidth: CGFloat = CGFloat(cols) * 40 // 40 per cell
+                    let objectHeight: CGFloat = CGFloat(rows) * 40
+                    let objectBounds = CGRect(
+                        x: newPosition.x - objectWidth/2,
+                        y: newPosition.y - objectHeight/2,
+                        width: objectWidth,
+                        height: objectHeight
+                    )
+                    
+                    // Define deletion zone in bottom-right corner
+                    let deleteZone = CGRect(
+                        x: windowBounds.width * 0.8,
+                        y: windowBounds.height * 0.8,
+                        width: windowBounds.width * 0.2,
+                        height: windowBounds.height * 0.2
+                    )
+                    
+                    if deleteZone.intersects(objectBounds) {
+                        isDraggingOverBin = true
+                        binAnimation = true
+                    } else {
+                        isDraggingOverBin = false
+                        binAnimation = false
+                    }
+                }
+                .onEnded { value in
+                    let windowBounds = CGRect(origin: .zero, size: geometry.size)
+                    
+                    // Calculate object bounds
+                    let objectWidth: CGFloat = CGFloat(cols) * 40
+                    let objectHeight: CGFloat = CGFloat(rows) * 40
+                    let objectBounds = CGRect(
+                        x: value.location.x - objectWidth/2,
+                        y: value.location.y - objectHeight/2,
+                        width: objectWidth,
+                        height: objectHeight
+                    )
+                    
+                    // Define deletion zone
+                    let deleteZone = CGRect(
+                        x: windowBounds.width * 0.8,
+                        y: windowBounds.height * 0.8,
+                        width: windowBounds.width * 0.2,
+                        height: windowBounds.height * 0.2
+                    )
+                    
+                    if deleteZone.intersects(objectBounds) {
+                        withAnimation {
+                            positions.removeValue(forKey: id)
+                            binAnimation = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                binAnimation = false
+                            }
+                        }
+                    }
                     isDraggingOverBin = false
-                    binAnimation = false
+                }
+
+            VStack(spacing: 1) {
+                ForEach(0..<rows, id: \.self) { row in
+                    HStack(spacing: 1) {
+                        ForEach(0..<cols, id: \.self) { col in
+                            Rectangle()
+                                .stroke(Color.black, lineWidth: 1)
+                                .overlay(
+                                    TextField("", text: Binding(
+                                        get: { values[row][col] },
+                                        set: { values[row][col] = $0 }
+                                    ))
+                                    .multilineTextAlignment(.center)
+                                )
+                                .frame(width: 40, height: 40)
+                        }
+                    }
                 }
             }
-            .onEnded { value in
-                let windowBounds = UIScreen.main.bounds
-                
-                // Calculate object bounds
-                let objectWidth: CGFloat = CGFloat(cols) * 40
-                let objectHeight: CGFloat = CGFloat(rows) * 40
-                let objectBounds = CGRect(
-                    x: value.location.x - objectWidth/2,
-                    y: value.location.y - objectHeight/2,
-                    width: objectWidth,
-                    height: objectHeight
-                )
-                
-                // Define deletion zone
-                let deleteZone = CGRect(
-                    x: windowBounds.width * 0.8,
-                    y: windowBounds.height * 0.8,
-                    width: windowBounds.width * 0.2,
-                    height: windowBounds.height * 0.2
-                )
-                
-                if deleteZone.intersects(objectBounds) {
+            .background(Color(UIColor.systemBackground))
+            .position(x: position.x, y: position.y)
+            .gesture(dragGesture)
+            // Add keyboard delete support
+            .keyboardShortcut(.delete, modifiers: [])
+            .onKeyPress { press in
+                if press.key == .delete || press.key == .delete {
                     withAnimation {
                         positions.removeValue(forKey: id)
                         binAnimation = true
@@ -300,31 +338,12 @@ struct GridView: View {
                             binAnimation = false
                         }
                     }
+                    return .handled
                 }
-                isDraggingOverBin = false
+                return .ignored
             }
-        
-        return VStack(spacing: 1) {
-            ForEach(0..<rows, id: \.self) { row in
-                HStack(spacing: 1) {
-                    ForEach(0..<cols, id: \.self) { col in
-                        Rectangle()
-                            .stroke(Color.black, lineWidth: 1)
-                            .overlay(
-                                TextField("", text: Binding(
-                                    get: { values[row][col] },
-                                    set: { values[row][col] = $0 }
-                                ))
-                                .multilineTextAlignment(.center)
-                            )
-                            .frame(width: 40, height: 40)
-                    }
-                }
-            }
+            .focusable()
         }
-        .background(Color(UIColor.systemBackground))
-        .position(x: position.x, y: position.y)
-        .gesture(dragGesture)
     }
     
     static func parseArrayFormat(_ input: String) -> [[String]] {
