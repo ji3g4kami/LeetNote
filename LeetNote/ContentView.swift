@@ -412,77 +412,30 @@ struct ContentView: View {
     
     var body: some View {
         VStack {
-            // Toolbar
-            HStack {
-                // Drawing tools
-                ForEach([DrawingTool.pen, .eraser, .rectangle, .circle, .arrow, .text, .selection, .hand, .deque, .grid], id: \.self) { tool in
-                    Button(action: {
-                        // Save current text if exists
-                        saveCurrentText()
-                        
-                        // Switch tool and clean up
-                        selectedTool = tool
-                        if tool != .hand {
-                            selectedElements.removeAll()
-                        }
-                        isShowingTextField = false
-                        currentText = ""
-                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
-                                                     to: nil,
-                                                     from: nil,
-                                                     for: nil)
-                    }) {
-                        Image(systemName: toolIcon(for: tool))
-                            .foregroundColor(selectedTool == tool ? .blue : .gray)
-                    }
-                    .padding()
-                }
-                
-                // Color picker
-                ColorPicker("", selection: $selectedColor)
-                    .padding()
-                
-                // Undo/Redo buttons
-                Button(action: undo) {
-                    Image(systemName: "arrow.uturn.backward")
-                }
-                .disabled(undoStack.isEmpty)
-                .padding()
-                
-                Button(action: redo) {
-                    Image(systemName: "arrow.uturn.forward")
-                }
-                .disabled(redoStack.isEmpty)
-                .padding()
-                
-                if !selectedElements.isEmpty {
-                    Button(action: copySelected) {
-                        Image(systemName: "doc.on.doc")
-                    }
-                    .padding()
-                }
-                
-                // Group the trash and layer controls together
-                HStack(spacing: 4) {  // Reduced spacing between these related controls
-                    Button(action: {
-                        undoStack.append(lines)
-                        lines.removeAll()
-                        redoStack.removeAll()
-                        selectedElements.removeAll()
-                        currentText = ""
-                        dequePositions.removeAll()
-                        gridPositions.removeAll()
-                    }) {
-                        Image(systemName: "trash")
-                            .foregroundColor(.red)
-                    }
-                    
-                    Spacer()
-                    Toggle("", isOn: $showDataStructuresOnTop)
-                           .toggleStyle(ImageToggleStyle(image: "square.stack.3d.up"))
-                           .padding()
-                }
-            }
+            // Replace toolbar with new component
+            ToolbarView(
+                selectedTool: $selectedTool,
+                selectedColor: $selectedColor,
+                currentText: $currentText,
+                selectedElements: $selectedElements,
+                showDataStructuresOnTop: $showDataStructuresOnTop,
+                lines: $lines,
+                undoAction: undo,
+                redoAction: redo,
+                copyAction: copySelected,
+                clearAction: {
+                    undoStack.append(lines)
+                    lines.removeAll()
+                    redoStack.removeAll()
+                    selectedElements.removeAll()
+                    currentText = ""
+                    dequePositions.removeAll()
+                    gridPositions.removeAll()
+                },
+                canUndo: !undoStack.isEmpty,
+                canRedo: !redoStack.isEmpty,
+                saveCurrentText: saveCurrentText
+            )
             
             // Canvas
             ZStack {
@@ -723,21 +676,6 @@ struct ContentView: View {
         }
         .onChange(of: gridPositions) { _, _ in
             selectedTool = .hand
-        }
-    }
-    
-    private func toolIcon(for tool: DrawingTool) -> String {
-        switch tool {
-        case .pen: return "pencil"
-        case .eraser: return "eraser"
-        case .rectangle: return "rectangle"
-        case .circle: return "circle"
-        case .arrow: return "arrow.right"
-        case .text: return "text.cursor"
-        case .selection: return "lasso"
-        case .hand: return "hand.draw"
-        case .deque: return "rectangle.split.3x1"
-        case .grid: return "rectangle.split.3x3"
         }
     }
     
