@@ -39,238 +39,6 @@ class DequeData: ObservableObject, Identifiable {
     }
 }
 
-struct DequeView: View {
-    @ObservedObject var dequeData: DequeData
-    @Binding var positions: [UUID: CGPoint]
-    @Binding var isDraggingOverBin: Bool
-    @Binding var binAnimation: Bool
-    @Binding var deques: [DequeData]
-    @Environment(\.displayScale) var displayScale
-    
-    var body: some View {
-        GeometryReader { geometry in
-            let objectSize = CGSize(
-                width: CGFloat(dequeData.values.count) * 40 + 60,
-                height: 60
-            )
-            
-            HStack(spacing: 1) {
-                // Front controls
-                VStack(spacing: 4) {
-                    Button(action: {
-                        if !dequeData.values.isEmpty {
-                            dequeData.values.removeFirst()
-                        }
-                    }) {
-                        Image(systemName: "minus.circle.fill")
-                            .foregroundColor(.red)
-                    }
-                    Button(action: {
-                        dequeData.values.insert("", at: 0)
-                    }) {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.blue)
-                    }
-                }
-                .offset(x: 10)
-                .zIndex(1)
-                
-                // Deque cells
-                HStack(spacing: 1) {
-                    ForEach(Array(dequeData.values.enumerated()), id: \.offset) { index, value in
-                        Rectangle()
-                            .stroke(Color.black, lineWidth: 1)
-                            .overlay(
-                                TextField("", text: Binding(
-                                    get: { value },
-                                    set: { dequeData.values[index] = $0 }
-                                ))
-                                .multilineTextAlignment(.center)
-                            )
-                            .frame(width: 40, height: 40)
-                    }
-                }
-                .background(Color(UIColor.systemBackground))
-                
-                // Back controls
-                VStack(spacing: 4) {
-                    Button(action: {
-                        if !dequeData.values.isEmpty {
-                            dequeData.values.removeLast()
-                        }
-                    }) {
-                        Image(systemName: "minus.circle.fill")
-                            .foregroundColor(.red)
-                    }
-                    Button(action: {
-                        dequeData.values.append("")
-                    }) {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.blue)
-                    }
-                }
-                .offset(x: -10)
-                .zIndex(1)
-            }
-            .position(x: dequeData.position.x, y: dequeData.position.y)
-            .dragToDelete(
-                position: $dequeData.position,
-                positions: $positions,
-                isDraggingOverBin: $isDraggingOverBin,
-                binAnimation: $binAnimation,
-                id: dequeData.id,
-                objectSize: objectSize
-            ) {
-                positions.removeValue(forKey: dequeData.id)
-                if let index = deques.firstIndex(where: { $0.id == dequeData.id }) {
-                    deques.remove(at: index)
-                }
-            }
-        }
-    }
-}
-
-// Helper function to parse array format
-
-
-struct GridView: View {
-    @State private var position: CGPoint
-    @State private var values: [[String]]
-    @State private var rows: Int
-    @State private var cols: Int
-    @Binding var positions: [UUID: CGPoint]
-    @Binding var isDraggingOverBin: Bool
-    @Binding var binAnimation: Bool
-    let id: UUID
-    let orientation: GridOrientation
-    
-    init(initialPosition: CGPoint,
-         arrayFormat: String,
-         positions: Binding<[UUID: CGPoint]>,
-         isDraggingOverBin: Binding<Bool>,
-         binAnimation: Binding<Bool>,
-         id: UUID,
-         orientation: GridOrientation = .rowByCol) {
-        _position = State(initialValue: initialPosition)
-        
-        self.orientation = orientation
-        
-        // Parse array format input [[1,2],[3,4]]
-        let parsedValues = GridView.parseArrayFormat(arrayFormat)
-        
-        switch orientation {
-        case .rowByCol:
-            _values = State(initialValue: parsedValues)
-            _rows = State(initialValue: parsedValues.count)
-            _cols = State(initialValue: parsedValues.first?.count ?? 0)
-        case .colByRow:
-            // Transpose the array for col×row orientation
-            let transposed = GridView.transpose(parsedValues)
-            _values = State(initialValue: transposed)
-            _rows = State(initialValue: transposed.count)
-            _cols = State(initialValue: transposed.first?.count ?? 0)
-        }
-        _positions = positions
-        _isDraggingOverBin = isDraggingOverBin
-        _binAnimation = binAnimation
-        self.id = id
-    }
-    
-    var body: some View {
-        GeometryReader { geometry in
-            let objectSize = CGSize(
-                width: CGFloat(cols) * 40,
-                height: CGFloat(rows) * 40
-            )
-            
-            VStack(spacing: 1) {
-                ForEach(0..<rows, id: \.self) { row in
-                    HStack(spacing: 1) {
-                        ForEach(0..<cols, id: \.self) { col in
-                            Rectangle()
-                                .stroke(Color.black, lineWidth: 1)
-                                .overlay(
-                                    TextField("", text: Binding(
-                                        get: { values[row][col] },
-                                        set: { values[row][col] = $0 }
-                                    ))
-                                    .multilineTextAlignment(.center)
-                                )
-                                .frame(width: 40, height: 40)
-                        }
-                    }
-                }
-            }
-            .background(Color(UIColor.systemBackground))
-            .position(x: position.x, y: position.y)
-            .dragToDelete(
-                position: $position,
-                positions: $positions,
-                isDraggingOverBin: $isDraggingOverBin,
-                binAnimation: $binAnimation,
-                id: id,
-                objectSize: objectSize
-            ) {
-                positions.removeValue(forKey: id)
-                binAnimation = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    binAnimation = false
-                }
-            }
-            // Add keyboard delete support
-            .keyboardShortcut(.delete, modifiers: [])
-            .onKeyPress { press in
-                if press.key == .delete || press.key == .delete {
-                    withAnimation {
-                        positions.removeValue(forKey: id)
-                        binAnimation = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            binAnimation = false
-                        }
-                    }
-                    return .handled
-                }
-                return .ignored
-            }
-            .focusable()
-        }
-    }
-    
-    static func parseArrayFormat(_ input: String) -> [[String]] {
-        // Remove whitespace
-        var cleaned = input.replacingOccurrences(of: " ", with: "")
-        
-        // Ensure the string starts and ends with [[...]]
-        if cleaned.hasPrefix("[[") && cleaned.hasSuffix("]]") {
-            // Remove outer brackets
-            cleaned = String(cleaned.dropFirst(2).dropLast(2))
-            
-            // Split into rows by "],["
-            let rows = cleaned.components(separatedBy: "],[")
-            
-            return rows.map { row in
-                // Clean up any remaining brackets
-                let cleanRow = row.replacingOccurrences(of: "[", with: "")
-                    .replacingOccurrences(of: "]", with: "")
-                
-                // Split row into values
-                return cleanRow.components(separatedBy: ",")
-            }
-        }
-        
-        return [[]]  // Return empty grid if parsing fails
-    }
-    
-    static func transpose(_ array: [[String]]) -> [[String]] {
-        guard let firstRow = array.first else { return [[]] }
-        return (0..<firstRow.count).map { colIndex in
-            array.map { row in
-                colIndex < row.count ? row[colIndex] : ""
-            }
-        }
-    }
-}
-
 struct ContentView: View {
     @State private var lines: [Line] = []
     @State private var currentLine: Line?
@@ -486,81 +254,26 @@ struct ContentView: View {
                 .padding()
             }
         }
-        .alert("Enter Initial Values", isPresented: $isShowingDequeAlert) {
-            TextField("e.g., 1,2,3 or leave empty", text: $dequeInitialValues)
-            Button("OK") {
-                if let position = pendingDequePosition {
-                    let id = UUID()
-                    let initialValues = dequeInitialValues.isEmpty ? 
-                        [""] : 
-                        dequeInitialValues
-                            .replacingOccurrences(of: "[", with: "")
-                            .replacingOccurrences(of: "]", with: "")
-                            .split(separator: ",")
-                            .map { $0.trimmingCharacters(in: .whitespaces) }
-                    let dequeData = DequeData(id: id, position: position, initialValues: initialValues)
-                    deques.append(dequeData)
-                    dequePositions[id] = position
-                }
-                pendingDequePosition = nil
-                dequeInitialValues = ""
-            }
-            Button("Cancel", role: .cancel) {
-                dequeInitialValues = ""
-                pendingDequePosition = nil
-            }
-        }
-        .alert("Enter Text", isPresented: $isShowingTextAlert) {
-            TextField("Text", text: $currentText)
-            Button("OK") {
-                if !currentText.isEmpty, let position = textPosition {
-                    let newLine = Line(
-                        points: [position],
-                        color: selectedColor,
-                        lineWidth: lineWidth,
-                        tool: .text,
-                        text: currentText
-                    )
-                    undoStack.append(lines)
-                    lines.append(newLine)
-                    redoStack.removeAll()
-                }
-                currentText = ""
-                textPosition = nil
-            }
-            Button("Cancel", role: .cancel) {
-                currentText = ""
-                textPosition = nil
-            }
-        }
-        .alert("Create Grid", isPresented: $isShowingGridAlert) {
-            TextField("Array (e.g., [[1,2],[3,4]])", text: $gridArrayInput)
-            
-            Button("Row × Col") {
-                if let position = pendingGridPosition {
-                    let id = UUID()
-                    gridOrientation = .rowByCol
-                    gridPositions[id] = position
-                }
-                pendingGridPosition = nil
-            }
-            
-            Button("Col × Row") {
-                if let position = pendingGridPosition {
-                    let id = UUID()
-                    gridOrientation = .colByRow
-                    gridPositions[id] = position
-                }
-                pendingGridPosition = nil
-            }
-            
-            Button("Cancel", role: .cancel) {
-                gridArrayInput = ""
-                pendingGridPosition = nil
-            }
-        } message: {
-            Text("Enter array in format [[1,2],[3,4]]")
-        }
+        .overlay(
+            AlertsOverlay(
+                isShowingDequeAlert: $isShowingDequeAlert,
+                isShowingTextAlert: $isShowingTextAlert,
+                isShowingGridAlert: $isShowingGridAlert,
+                dequeInitialValues: $dequeInitialValues,
+                currentText: $currentText,
+                gridArrayInput: $gridArrayInput,
+                pendingDequePosition: $pendingDequePosition,
+                pendingGridPosition: $pendingGridPosition,
+                textPosition: $textPosition,
+                gridOrientation: $gridOrientation,
+                dequePositions: $dequePositions,
+                gridPositions: $gridPositions,
+                lines: $lines,
+                undoStack: $undoStack,
+                redoStack: $redoStack,
+                deques: $deques
+            )
+        )
         .onChange(of: dequePositions) { _, _ in
             selectedTool = .hand
         }
@@ -1092,5 +805,108 @@ struct ImageToggleStyle: ToggleStyle {
                 .labelsHidden()
                 .scaleEffect(0.8)  // Scale down the toggle slightly
         }
+    }
+}
+
+// New component to handle alerts
+struct AlertsOverlay: View {
+    @Binding var isShowingDequeAlert: Bool
+    @Binding var isShowingTextAlert: Bool
+    @Binding var isShowingGridAlert: Bool
+    @Binding var dequeInitialValues: String
+    @Binding var currentText: String
+    @Binding var gridArrayInput: String
+    @Binding var pendingDequePosition: CGPoint?
+    @Binding var pendingGridPosition: CGPoint?
+    @Binding var textPosition: CGPoint?
+    @Binding var gridOrientation: GridOrientation
+    @Binding var dequePositions: [UUID: CGPoint]
+    @Binding var gridPositions: [UUID: CGPoint]
+    @Binding var lines: [Line]
+    @Binding var undoStack: [[Line]]
+    @Binding var redoStack: [[Line]]
+    @Binding var deques: [DequeData]
+    
+    var body: some View {
+        EmptyView()
+            .alert("Enter Initial Values", isPresented: $isShowingDequeAlert) {
+                TextField("e.g., 1,2,3 or leave empty", text: $dequeInitialValues)
+                Button("OK") {
+                    handleDequeAlert()
+                }
+                Button("Cancel", role: .cancel) {
+                    dequeInitialValues = ""
+                    pendingDequePosition = nil
+                }
+            }
+            .alert("Enter Text", isPresented: $isShowingTextAlert) {
+                TextField("Text", text: $currentText)
+                Button("OK") {
+                    handleTextAlert()
+                }
+                Button("Cancel", role: .cancel) {
+                    currentText = ""
+                    textPosition = nil
+                }
+            }
+            .alert("Create Grid", isPresented: $isShowingGridAlert) {
+                TextField("Array (e.g., [[1,2],[3,4]])", text: $gridArrayInput)
+                Button("Row × Col") {
+                    handleGridAlert(orientation: .rowByCol)
+                }
+                Button("Col × Row") {
+                    handleGridAlert(orientation: .colByRow)
+                }
+                Button("Cancel", role: .cancel) {
+                    gridArrayInput = ""
+                    pendingGridPosition = nil
+                }
+            } message: {
+                Text("Enter array in format [[1,2],[3,4]]")
+            }
+    }
+    
+    private func handleDequeAlert() {
+        if let position = pendingDequePosition {
+            let id = UUID()
+            let initialValues = dequeInitialValues.isEmpty ? 
+                [""] : 
+                dequeInitialValues
+                    .replacingOccurrences(of: "[", with: "")
+                    .replacingOccurrences(of: "]", with: "")
+                    .split(separator: ",")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+            let dequeData = DequeData(id: id, position: position, initialValues: initialValues)
+            deques.append(dequeData)
+            dequePositions[id] = position
+        }
+        pendingDequePosition = nil
+        dequeInitialValues = ""
+    }
+    
+    private func handleTextAlert() {
+        if !currentText.isEmpty, let position = textPosition {
+            let newLine = Line(
+                points: [position],
+                color: .black,
+                lineWidth: 3,
+                tool: .text,
+                text: currentText
+            )
+            undoStack.append(lines)
+            lines.append(newLine)
+            redoStack.removeAll()
+        }
+        currentText = ""
+        textPosition = nil
+    }
+    
+    private func handleGridAlert(orientation: GridOrientation) {
+        if let position = pendingGridPosition {
+            let id = UUID()
+            gridOrientation = orientation
+            gridPositions[id] = position
+        }
+        pendingGridPosition = nil
     }
 }
