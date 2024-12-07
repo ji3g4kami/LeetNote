@@ -13,17 +13,23 @@ enum GridOrientation {
     case colByRow
 }
 
-enum DrawingTool {
-    case pen
-    case eraser
-    case rectangle
-    case circle
-    case arrow
-    case text
-    case selection
-    case hand
-    case deque
-    case grid
+enum DrawingTool: CaseIterable {
+    case pen, eraser, rectangle, circle, arrow, text, selection, hand, deque, grid
+
+    var iconName: String {
+        switch self {
+        case .pen: return "pencil"
+        case .eraser: return "eraser"
+        case .rectangle: return "rectangle"
+        case .circle: return "circle"
+        case .arrow: return "arrow.right"
+        case .text: return "text.cursor"
+        case .selection: return "lasso"
+        case .hand: return "hand.draw"
+        case .deque: return "rectangle.split.3x1"
+        case .grid: return "rectangle.split.3x3"
+        }
+    }
 }
 
 // Add this new class to store deque data

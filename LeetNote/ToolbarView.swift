@@ -18,78 +18,56 @@ struct ToolbarView: View {
     var body: some View {
         HStack {
             // Drawing tools
-            ForEach([DrawingTool.pen, .eraser, .rectangle, .circle, .arrow, .text, .selection, .hand, .deque, .grid], id: \.self) { tool in
-                Button(action: {
-                    saveCurrentText()
-                    
-                    // Switch tool and clean up
-                    selectedTool = tool
-                    if tool != .hand {
-                        selectedElements.removeAll()
-                    }
-                    currentText = ""
-                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
-                                                 to: nil,
-                                                 from: nil,
-                                                 for: nil)
-                }) {
-                    Image(systemName: toolIcon(for: tool))
-                        .foregroundColor(selectedTool == tool ? .blue : .gray)
-                }
-                .padding()
+            ForEach(DrawingTool.allCases, id: \.self) { tool in
+                ToolButton(
+                    tool: tool,
+                    selectedTool: $selectedTool,
+                    saveCurrentText: saveCurrentText
+                )
             }
-            
+
             // Color picker
             ColorPicker("", selection: $selectedColor)
                 .padding()
-            
+                .accessibilityLabel("Color Picker")
+
             // Undo/Redo buttons
             Button(action: undoAction) {
                 Image(systemName: "arrow.uturn.backward")
             }
             .disabled(!canUndo)
             .padding()
-            
+            .accessibilityLabel("Undo")
+
             Button(action: redoAction) {
                 Image(systemName: "arrow.uturn.forward")
             }
             .disabled(!canRedo)
             .padding()
-            
+            .accessibilityLabel("Redo")
+
+            // Copy button (only when elements are selected)
             if !selectedElements.isEmpty {
                 Button(action: copyAction) {
                     Image(systemName: "doc.on.doc")
                 }
                 .padding()
+                .accessibilityLabel("Copy Selected Elements")
             }
-            
-            // Group the trash and layer controls together
+
+            // Trash and Layer Controls
             HStack(spacing: 4) {
                 Button(action: clearAction) {
                     Image(systemName: "trash")
                         .foregroundColor(.red)
                 }
-                
-                Spacer()
+                .accessibilityLabel("Clear All")
+
                 Toggle("", isOn: $showDataStructuresOnTop)
-                       .toggleStyle(ImageToggleStyle(image: "square.stack.3d.up"))
-                       .padding()
+                    .toggleStyle(ImageToggleStyle(image: "square.stack.3d.up"))
+                    .padding()
+                    .accessibilityLabel("Show Data Structures On Top")
             }
-        }
-    }
-    
-    private func toolIcon(for tool: DrawingTool) -> String {
-        switch tool {
-        case .pen: return "pencil"
-        case .eraser: return "eraser"
-        case .rectangle: return "rectangle"
-        case .circle: return "circle"
-        case .arrow: return "arrow.right"
-        case .text: return "text.cursor"
-        case .selection: return "lasso"
-        case .hand: return "hand.draw"
-        case .deque: return "rectangle.split.3x1"
-        case .grid: return "rectangle.split.3x3"
         }
     }
 }
@@ -110,4 +88,24 @@ struct ToolbarView: View {
         canRedo: false,
         saveCurrentText: {}
     )
+}
+
+struct ToolButton: View {
+    let tool: DrawingTool
+    @Binding var selectedTool: DrawingTool
+    let saveCurrentText: () -> Void
+
+    var body: some View {
+        Button(action: {
+            saveCurrentText()
+            withAnimation {
+                selectedTool = tool
+            }
+        }) {
+            Image(systemName: tool.iconName)
+                .foregroundColor(selectedTool == tool ? .blue : .gray)
+        }
+        .padding()
+        .accessibilityLabel("\(tool.iconName) Tool")
+    }
 }
