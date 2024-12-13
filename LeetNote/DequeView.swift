@@ -2,7 +2,6 @@ import SwiftUI
 
 struct DequeView: View {
     @ObservedObject var dequeData: DequeData
-    @Binding var positions: [UUID: CGPoint]
     @Binding var isDraggingOverBin: Bool
     @Binding var binAnimation: Bool
     @Binding var deques: [DequeData]
@@ -76,13 +75,11 @@ struct DequeView: View {
             .position(x: dequeData.position.x, y: dequeData.position.y)
             .dragToDelete(
                 position: $dequeData.position,
-                positions: $positions,
                 isDraggingOverBin: $isDraggingOverBin,
                 binAnimation: $binAnimation,
                 id: dequeData.id,
                 objectSize: objectSize
             ) {
-                positions.removeValue(forKey: dequeData.id)
                 if let index = deques.firstIndex(where: { $0.id == dequeData.id }) {
                     deques.remove(at: index)
                 }

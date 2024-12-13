@@ -753,7 +753,6 @@ struct ContentView: View {
                 if dequePositions[dequeData.id] != nil {
                     DequeView(
                         dequeData: dequeData,
-                        positions: $dequePositions,
                         isDraggingOverBin: $isDraggingOverBin,
                         binAnimation: $binAnimation,
                         deques: $deques
@@ -767,7 +766,6 @@ struct ContentView: View {
                     GridView(
                         initialPosition: position,
                         arrayFormat: gridArrayInput,
-                        positions: $gridPositions,
                         isDraggingOverBin: $isDraggingOverBin,
                         binAnimation: $binAnimation,
                         id: id,

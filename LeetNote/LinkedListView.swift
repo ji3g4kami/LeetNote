@@ -90,7 +90,6 @@ struct LinkedListView: View {
             .position(x: position.x, y: position.y)
             .dragToDelete(
                 position: $position,
-                positions: $positions,
                 isDraggingOverBin: $isDraggingOverBin,
                 binAnimation: $binAnimation,
                 id: id,

@@ -5,7 +5,6 @@ struct GridView: View {
     @State private var values: [[String]]
     @State private var rows: Int
     @State private var cols: Int
-    @Binding var positions: [UUID: CGPoint]
     @Binding var isDraggingOverBin: Bool
     @Binding var binAnimation: Bool
     let id: UUID
@@ -13,7 +12,6 @@ struct GridView: View {
     
     init(initialPosition: CGPoint,
          arrayFormat: String,
-         positions: Binding<[UUID: CGPoint]>,
          isDraggingOverBin: Binding<Bool>,
          binAnimation: Binding<Bool>,
          id: UUID,
@@ -23,7 +21,6 @@ struct GridView: View {
         _values = State(initialValue: parsedValues)
         _rows = State(initialValue: parsedValues.count)
         _cols = State(initialValue: parsedValues.first?.count ?? 0)
-        _positions = positions
         _isDraggingOverBin = isDraggingOverBin
         _binAnimation = binAnimation
         self.id = id
@@ -59,14 +56,11 @@ struct GridView: View {
             .position(x: position.x, y: position.y)
             .dragToDelete(
                 position: $position,
-                positions: $positions,
                 isDraggingOverBin: $isDraggingOverBin,
                 binAnimation: $binAnimation,
                 id: id,
-                objectSize: objectSize
-            ) {
-                positions.removeValue(forKey: id)
-            }
+                objectSize: objectSize, onDelete: {}
+            )
         }
     }
 
@@ -83,7 +77,8 @@ struct GridView: View {
             let parsedRows = rows.map { row in
                 let cleanRow = row.replacingOccurrences(of: "[", with: "")
                     .replacingOccurrences(of: "]", with: "")
-                return cleanRow.components(separatedBy: ",")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return cleanRow.isEmpty ? [] : cleanRow.components(separatedBy: ",")
             }
             let maxLength = parsedRows.map { $0.count }.max() ?? 0
             return parsedRows.map { row in

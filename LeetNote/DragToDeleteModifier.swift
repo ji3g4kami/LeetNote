@@ -2,7 +2,6 @@ import SwiftUI
 
 struct DragToDeleteModifier: ViewModifier {
     @Binding var position: CGPoint
-    @Binding var positions: [UUID: CGPoint]
     @Binding var isDraggingOverBin: Bool
     @Binding var binAnimation: Bool
     let id: UUID
@@ -17,7 +16,6 @@ struct DragToDeleteModifier: ViewModifier {
                         // Update position
                         let newPosition = value.location
                         position = newPosition
-                        positions[id] = newPosition
                         
                         // Calculate bounds
                         let windowBounds = CGRect(origin: .zero, size: geometry.size)
@@ -75,7 +73,6 @@ struct DragToDeleteModifier: ViewModifier {
 extension View {
     func dragToDelete(
         position: Binding<CGPoint>,
-        positions: Binding<[UUID: CGPoint]>,
         isDraggingOverBin: Binding<Bool>,
         binAnimation: Binding<Bool>,
         id: UUID,
@@ -84,7 +81,6 @@ extension View {
     ) -> some View {
         modifier(DragToDeleteModifier(
             position: position,
-            positions: positions,
             isDraggingOverBin: isDraggingOverBin,
             binAnimation: binAnimation,
             id: id,
