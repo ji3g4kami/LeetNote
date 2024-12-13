@@ -19,41 +19,28 @@ struct GridView: View {
          id: UUID,
          orientation: GridOrientation = .rowByCol) {
         _position = State(initialValue: initialPosition)
-        
-        self.orientation = orientation
-        
-        // Parse array format input [[1,2],[3,4]]
-        let parsedValues = GridView.parseArrayFormat(arrayFormat)
-        
-        switch orientation {
-        case .rowByCol:
-            _values = State(initialValue: parsedValues)
-            _rows = State(initialValue: parsedValues.count)
-            _cols = State(initialValue: parsedValues.first?.count ?? 0)
-        case .colByRow:
-            // Transpose the array for col×row orientation
-            let transposed = GridView.transpose(parsedValues)
-            _values = State(initialValue: transposed)
-            _rows = State(initialValue: transposed.count)
-            _cols = State(initialValue: transposed.first?.count ?? 0)
-        }
+        let parsedValues = GridView.parseAndTranspose(arrayFormat, orientation: orientation)
+        _values = State(initialValue: parsedValues)
+        _rows = State(initialValue: parsedValues.count)
+        _cols = State(initialValue: parsedValues.first?.count ?? 0)
         _positions = positions
         _isDraggingOverBin = isDraggingOverBin
         _binAnimation = binAnimation
         self.id = id
+        self.orientation = orientation
     }
-    
+
     var body: some View {
         GeometryReader { geometry in
             let objectSize = CGSize(
                 width: CGFloat(cols) * 40,
                 height: CGFloat(rows) * 40
             )
-            
+
             VStack(spacing: 1) {
-                ForEach(0..<rows, id: \.self) { row in
+                ForEach(values.indices, id: \.self) { row in
                     HStack(spacing: 1) {
-                        ForEach(0..<cols, id: \.self) { col in
+                        ForEach(values[row].indices, id: \.self) { col in
                             Rectangle()
                                 .stroke(Color.black, lineWidth: 1)
                                 .overlay(
@@ -79,72 +66,38 @@ struct GridView: View {
                 objectSize: objectSize
             ) {
                 positions.removeValue(forKey: id)
-                binAnimation = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    binAnimation = false
-                }
             }
-            // Add keyboard delete support
-            .keyboardShortcut(.delete, modifiers: [])
-            .onKeyPress { press in
-                if press.key == .delete || press.key == .delete {
-                    withAnimation {
-                        positions.removeValue(forKey: id)
-                        binAnimation = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            binAnimation = false
-                        }
-                    }
-                    return .handled
-                }
-                return .ignored
-            }
-            .focusable()
         }
     }
-    
+
+    static func parseAndTranspose(_ input: String, orientation: GridOrientation) -> [[String]] {
+        let parsedValues = parseArrayFormat(input)
+        return orientation == .rowByCol ? parsedValues : transpose(parsedValues)
+    }
+
     static func parseArrayFormat(_ input: String) -> [[String]] {
-        // Remove whitespace
         var cleaned = input.replacingOccurrences(of: " ", with: "")
-        
-        // Ensure the string starts and ends with [[...]]
         if cleaned.hasPrefix("[[") && cleaned.hasSuffix("]]") {
-            // Remove outer brackets
             cleaned = String(cleaned.dropFirst(2).dropLast(2))
-            
-            // Split into rows by "],["
             let rows = cleaned.components(separatedBy: "],[")
-            
-            // Parse rows and find maximum length
-            var parsedRows = rows.map { row in
-                // Clean up any remaining brackets
+            let parsedRows = rows.map { row in
                 let cleanRow = row.replacingOccurrences(of: "[", with: "")
                     .replacingOccurrences(of: "]", with: "")
-                
-                // Split row into values
                 return cleanRow.components(separatedBy: ",")
             }
-            
-            // Find the maximum row length
             let maxLength = parsedRows.map { $0.count }.max() ?? 0
-            
-            // Pad shorter rows with empty strings
             return parsedRows.map { row in
                 let padding = Array(repeating: "", count: maxLength - row.count)
                 return row + padding
             }
         }
-        
-        return [[]]  // Return empty grid if parsing fails
+        return [[]]
     }
-    
+
     static func transpose(_ array: [[String]]) -> [[String]] {
         guard let firstRow = array.first else { return [[]] }
         return (0..<firstRow.count).map { colIndex in
-            array.map { row in
-                colIndex < row.count ? row[colIndex] : ""
-            }
+            array.map { row in colIndex < row.count ? row[colIndex] : "" }
         }
     }
 }
-
