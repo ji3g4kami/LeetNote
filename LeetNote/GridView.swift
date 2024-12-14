@@ -1,30 +1,32 @@
 import SwiftUI
 
 struct GridView: View {
-    @State private var position: CGPoint
-    @State private var values: [[String]]
+    @ObservedObject var gridData: DSViewData<String>
     @State private var rows: Int
     @State private var cols: Int
     @Binding var isDraggingOverBin: Bool
     @Binding var binAnimation: Bool
-    let id: UUID
     let orientation: GridOrientation
+    let parsedValues: [[String]]
+    @Binding var grids: [DSViewData<String>]
     
-    init(initialPosition: CGPoint,
+    init(gridData: DSViewData<String>,
          arrayFormat: String,
          isDraggingOverBin: Binding<Bool>,
          binAnimation: Binding<Bool>,
-         id: UUID,
-         orientation: GridOrientation = .rowByCol) {
-        _position = State(initialValue: initialPosition)
-        let parsedValues = GridView.parseAndTranspose(arrayFormat, orientation: orientation)
-        _values = State(initialValue: parsedValues)
-        _rows = State(initialValue: parsedValues.count)
-        _cols = State(initialValue: parsedValues.first?.count ?? 0)
-        _isDraggingOverBin = isDraggingOverBin
-        _binAnimation = binAnimation
-        self.id = id
+         orientation: GridOrientation = .rowByCol,
+         grids: Binding<[DSViewData<String>]>
+    ) {
+        self.gridData = gridData
         self.orientation = orientation
+        self._isDraggingOverBin = isDraggingOverBin
+        self._binAnimation = binAnimation
+        self._grids = grids
+        
+        let parsedValues = GridView.parseAndTranspose(arrayFormat, orientation: orientation)
+        self.parsedValues = parsedValues
+        self._rows = State(initialValue: parsedValues.count)
+        self._cols = State(initialValue: parsedValues.first?.count ?? 0)
     }
 
     var body: some View {
@@ -35,33 +37,37 @@ struct GridView: View {
             )
 
             VStack(spacing: 1) {
-                ForEach(values.indices, id: \.self) { row in
+                ForEach(parsedValues.indices, id: \.self) { (row: Int) in
                     HStack(spacing: 1) {
-                        ForEach(values[row].indices, id: \.self) { col in
-                            Rectangle()
-                                .stroke(Color.black, lineWidth: 1)
-                                .overlay(
-                                    TextField("", text: Binding(
-                                        get: { values[row][col] },
-                                        set: { values[row][col] = $0 }
-                                    ))
-                                    .multilineTextAlignment(.center)
-                                )
-                                .frame(width: 40, height: 40)
+                        ForEach(parsedValues[row].indices, id: \.self) { (col: Int) in
+                            createGridCell(row: row, col: col)
                         }
                     }
                 }
             }
             .background(Color(UIColor.systemBackground))
-            .position(x: position.x, y: position.y)
+            .position(x: gridData.position.x, y: gridData.position.y)
             .dragToDelete(
-                position: $position,
+                position: $gridData.position,
                 isDraggingOverBin: $isDraggingOverBin,
                 binAnimation: $binAnimation,
-                id: id,
-                objectSize: objectSize, onDelete: {}
+                objectSize: objectSize, onDelete: {
+                    if let index = grids.firstIndex(where: { $0.id == gridData.id }) {
+                        grids.remove(at: index)
+                    }
+                }
             )
         }
+    }
+    
+    private func createGridCell(row: Int, col: Int) -> some View {
+        Rectangle()
+            .stroke(Color.black, lineWidth: 1)
+            .overlay(
+                Text(parsedValues[row][col])
+                    .multilineTextAlignment(.center)
+            )
+            .frame(width: 40, height: 40)
     }
 
     static func parseAndTranspose(_ input: String, orientation: GridOrientation) -> [[String]] {

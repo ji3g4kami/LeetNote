@@ -1,37 +1,31 @@
 import SwiftUI
 
 struct LinkedListView: View {
-    @State private var values: [String]
-    @State private var position: CGPoint
+    @State private var sequenceData: DSViewData<[String]>
     @Binding var isDraggingOverBin: Bool
     @Binding var binAnimation: Bool
     @Binding var lists: [[String]]
-    let id: UUID
 
-    init(initialValues: [String],
-         initialPosition: CGPoint,
+    init(sequenceData: DSViewData<[String]>,
          isDraggingOverBin: Binding<Bool>,
          binAnimation: Binding<Bool>,
-         lists: Binding<[[String]]>,
-         id: UUID) {
-        _values = State(initialValue: initialValues)
-        _position = State(initialValue: initialPosition)
+         lists: Binding<[[String]]>) {
+        _sequenceData = State(initialValue: sequenceData)
         _isDraggingOverBin = isDraggingOverBin
         _binAnimation = binAnimation
         _lists = lists
-        self.id = id
     }
 
     var body: some View {
         GeometryReader { geometry in
             let objectSize = CGSize(
-                width: CGFloat(values.count) * 80,
+                width: CGFloat(sequenceData.values.count) * 80,
                 height: 60
             )
             
             ZStack {
                 // Draw lines between nodes
-                ForEach(0..<(values.count - 1), id: \.self) { index in
+                ForEach(0..<(sequenceData.values.count - 1), id: \.self) { index in
                     Path { path in
                         let startX = CGFloat(index) * 80 + 65
                         let endX = CGFloat(index + 1) * 80 + 15
@@ -43,7 +37,7 @@ struct LinkedListView: View {
                 
                 // Nodes
                 HStack(spacing: 30) {
-                    ForEach(Array(values.enumerated()), id: \.offset) { index, value in
+                    ForEach(Array(sequenceData.values.enumerated()), id: \.offset) { index, value in
                         VStack(spacing: 4) {
                             // Node
                             ZStack {
@@ -53,7 +47,7 @@ struct LinkedListView: View {
                                     .overlay(
                                         TextField("", text: Binding(
                                             get: { value },
-                                            set: { values[index] = $0 }
+                                            set: { sequenceData.values[index] = $0 }
                                         ))
                                         .multilineTextAlignment(.center)
                                     )
@@ -63,7 +57,7 @@ struct LinkedListView: View {
                             // Controls
                             HStack(spacing: 4) {
                                 Button(action: {
-                                    values.remove(at: index)
+                                    sequenceData.values.remove(at: index)
                                 }) {
                                     Image(systemName: "minus.circle.fill")
                                         .foregroundColor(.red)
@@ -71,7 +65,7 @@ struct LinkedListView: View {
                                 }
                                 
                                 Button(action: {
-                                    values.insert("", at: index + 1)
+                                    sequenceData.values.insert("", at: index + 1)
                                 }) {
                                     Image(systemName: "plus.circle.fill")
                                         .foregroundColor(.blue)
@@ -84,15 +78,14 @@ struct LinkedListView: View {
                 .frame(width: objectSize.width, height: objectSize.height)
             }
             .frame(width: objectSize.width, height: objectSize.height)
-            .position(x: position.x, y: position.y)
+            .position(x: sequenceData.position.x, y: sequenceData.position.y)
             .dragToDelete(
-                position: $position,
+                position: $sequenceData.position,
                 isDraggingOverBin: $isDraggingOverBin,
                 binAnimation: $binAnimation,
-                id: id,
                 objectSize: objectSize
             ) {
-                if let index = lists.firstIndex(where: { $0 == values }) {
+                if let index = lists.firstIndex(where: { $0 == sequenceData.values }) {
                     lists.remove(at: index)
                 }
             }
@@ -101,12 +94,12 @@ struct LinkedListView: View {
 }
 
 #Preview {
-    return LinkedListView(
-        initialValues: ["1", "2", "3"],
-        initialPosition: CGPoint(x: 200, y: 300),
+    LinkedListView(
+        sequenceData: DSViewData<[String]>(
+            position: CGPoint(x: 200, y: 300),
+            initialValues: ["1", "2", "3"]),
         isDraggingOverBin: .constant(false),
         binAnimation: .constant(false),
-        lists: .constant([]),
-        id: UUID()
+        lists: .constant([])
     )
 }

@@ -1,10 +1,10 @@
 import SwiftUI
 
 struct DequeView: View {
-    @ObservedObject var dequeData: DequeData
+    @ObservedObject var dequeData: DSViewData<[String]>
     @Binding var isDraggingOverBin: Bool
     @Binding var binAnimation: Bool
-    @Binding var deques: [DequeData]
+    @Binding var deques: [DSViewData<[String]>]
     @Environment(\.displayScale) var displayScale
     
     var body: some View {
@@ -77,7 +77,6 @@ struct DequeView: View {
                 position: $dequeData.position,
                 isDraggingOverBin: $isDraggingOverBin,
                 binAnimation: $binAnimation,
-                id: dequeData.id,
                 objectSize: objectSize
             ) {
                 if let index = deques.firstIndex(where: { $0.id == dequeData.id }) {

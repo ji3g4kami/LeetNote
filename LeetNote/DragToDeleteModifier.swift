@@ -4,7 +4,6 @@ struct DragToDeleteModifier: ViewModifier {
     @Binding var position: CGPoint
     @Binding var isDraggingOverBin: Bool
     @Binding var binAnimation: Bool
-    let id: UUID
     let objectSize: CGSize
     let onDelete: () -> Void
     
@@ -75,7 +74,6 @@ extension View {
         position: Binding<CGPoint>,
         isDraggingOverBin: Binding<Bool>,
         binAnimation: Binding<Bool>,
-        id: UUID,
         objectSize: CGSize,
         onDelete: @escaping () -> Void
     ) -> some View {
@@ -83,7 +81,6 @@ extension View {
             position: position,
             isDraggingOverBin: isDraggingOverBin,
             binAnimation: binAnimation,
-            id: id,
             objectSize: objectSize,
             onDelete: onDelete
         ))

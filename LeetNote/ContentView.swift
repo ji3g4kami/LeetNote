@@ -33,12 +33,12 @@ enum DrawingTool: CaseIterable {
 }
 
 // Add this new class to store deque data
-class DequeData: ObservableObject, Identifiable {
+class DSViewData<T>: ObservableObject, Identifiable {
     let id: UUID
     @Published var position: CGPoint
-    @Published var values: [String]
+    @Published var values: T
     
-    init(id: UUID, position: CGPoint, initialValues: [String]) {
+    init(id: UUID = UUID(), position: CGPoint, initialValues: T) {
         self.id = id
         self.position = position
         self.values = initialValues
@@ -72,7 +72,8 @@ struct ContentView: View {
     @State private var binAnimation = false
     @State private var showDataStructuresOnTop = true
     @State private var gridOrientation: GridOrientation = .rowByCol
-    @State private var deques: [DequeData] = []
+    @State private var deques: [DSViewData<[String]>] = []
+    @State private var grids: [DSViewData<String>] = []
     
     var body: some View {
         VStack {
@@ -109,82 +110,7 @@ struct ContentView: View {
                 }
                 
                 // Canvas Layer
-                Canvas { context, size in
-                    for (index, line) in lines.enumerated() {
-                        let isSelected = selectedElements.contains(index)
-                        if isSelected && dragOffset != .zero {
-                            var offsetLine = line
-                            offsetLine.points = line.points.map { CGPoint(
-                                x: $0.x + dragOffset.width,
-                                y: $0.y + dragOffset.height
-                            )}
-                            drawElement(context: context, line: offsetLine, isSelected: true)
-                        } else {
-                            drawElement(context: context, line: line, isSelected: isSelected)
-                        }
-                    }
-                    if let currentLine = currentLine {
-                        drawElement(context: context, line: currentLine, isSelected: false)
-                    }
-                }
-                .onTapGesture { location in
-                    print("Tap detected, selected tool: \(selectedTool)")
-                    if selectedTool == .deque {
-                        pendingDequePosition = location
-                        isShowingDequeAlert = true
-                        return
-                    } else if selectedTool == .grid {
-                        pendingGridPosition = location
-                        isShowingGridAlert = true
-                        return
-                    } else if selectedTool == .text {
-                        textPosition = location
-                        isShowingTextAlert = true
-                    } else {
-                        handleTap(at: location)
-                    }
-                }
-                .gesture(
-                    DragGesture(minimumDistance: 1)
-                        .onChanged { value in
-                            if selectedTool == .text {
-                                // Ignore drag for text tool
-                                return
-                            }
-                            if selectedTool == .selection {
-                                if !selectedElements.isEmpty {
-                                    dragOffset = value.translation
-                                } else {
-                                    handleSelectionDrag(value)
-                                }
-                            } else if selectedTool == .text {
-                                // No drag handling for text tool
-                            } else {
-                                handleDragChange(value)
-                            }
-                        }
-                        .onEnded { value in
-                            if selectedTool == .text {
-                                // Ignore drag for text tool
-                                return
-                            }
-                            if selectedTool == .selection {
-                                if !selectedElements.isEmpty {
-                                    applyDragToSelected()
-                                } else {
-                                    handleSelectionEnd(value)
-                                }
-                                dragOffset = .zero
-                            } else if selectedTool == .text {
-                                saveCurrentText()
-                                textPosition = value.location
-                                isShowingTextField = true
-                                currentText = ""
-                            } else {
-                                handleDragEnd(value)
-                            }
-                        }
-                )
+                canvasLayer
                 
                 if showDataStructuresOnTop {
                     // Data Structures Layer
@@ -277,7 +203,8 @@ struct ContentView: View {
                 lines: $lines,
                 undoStack: $undoStack,
                 redoStack: $redoStack,
-                deques: $deques
+                deques: $deques,
+                grids: $grids
             )
         )
         .onChange(of: dequePositions) { _, _ in
@@ -761,19 +688,97 @@ struct ContentView: View {
             }
             
             // Display GridViews
-            ForEach(Array(gridPositions.keys), id: \.self) { id in
-                if let position = gridPositions[id] {
+            ForEach(grids) { gridData in
+                if gridPositions[gridData.id] != nil {
                     GridView(
-                        initialPosition: position,
-                        arrayFormat: gridArrayInput,
+                        gridData: gridData,
+                        arrayFormat: gridData.values,
                         isDraggingOverBin: $isDraggingOverBin,
                         binAnimation: $binAnimation,
-                        id: id,
-                        orientation: gridOrientation
+                        grids: $grids
                     )
                 }
             }
         }
+    }
+    
+    private var canvasLayer: some View {
+        Canvas { context, size in
+            for (index, line) in lines.enumerated() {
+                let isSelected = selectedElements.contains(index)
+                if isSelected && dragOffset != .zero {
+                    var offsetLine = line
+                    offsetLine.points = line.points.map { CGPoint(
+                        x: $0.x + dragOffset.width,
+                        y: $0.y + dragOffset.height
+                    )}
+                    drawElement(context: context, line: offsetLine, isSelected: true)
+                } else {
+                    drawElement(context: context, line: line, isSelected: isSelected)
+                }
+            }
+            if let currentLine = currentLine {
+                drawElement(context: context, line: currentLine, isSelected: false)
+            }
+        }
+        .onTapGesture { location in
+            print("Tap detected, selected tool: \(selectedTool)")
+            if selectedTool == .deque {
+                pendingDequePosition = location
+                isShowingDequeAlert = true
+                return
+            } else if selectedTool == .grid {
+                pendingGridPosition = location
+                isShowingGridAlert = true
+                return
+            } else if selectedTool == .text {
+                textPosition = location
+                isShowingTextAlert = true
+            } else {
+                handleTap(at: location)
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if selectedTool == .text {
+                        // Ignore drag for text tool
+                        return
+                    }
+                    if selectedTool == .selection {
+                        if !selectedElements.isEmpty {
+                            dragOffset = value.translation
+                        } else {
+                            handleSelectionDrag(value)
+                        }
+                    } else if selectedTool == .text {
+                        // No drag handling for text tool
+                    } else {
+                        handleDragChange(value)
+                    }
+                }
+                .onEnded { value in
+                    if selectedTool == .text {
+                        // Ignore drag for text tool
+                        return
+                    }
+                    if selectedTool == .selection {
+                        if !selectedElements.isEmpty {
+                            applyDragToSelected()
+                        } else {
+                            handleSelectionEnd(value)
+                        }
+                        dragOffset = .zero
+                    } else if selectedTool == .text {
+                        saveCurrentText()
+                        textPosition = value.location
+                        isShowingTextField = true
+                        currentText = ""
+                    } else {
+                        handleDragEnd(value)
+                    }
+                }
+        )
     }
 }
 
@@ -814,7 +819,8 @@ struct AlertsOverlay: View {
     @Binding var lines: [Line]
     @Binding var undoStack: [[Line]]
     @Binding var redoStack: [[Line]]
-    @Binding var deques: [DequeData]
+    @Binding var deques: [DSViewData<[String]>]
+    @Binding var grids: [DSViewData<String>]
     
     var body: some View {
         EmptyView()
@@ -865,7 +871,7 @@ struct AlertsOverlay: View {
                     .replacingOccurrences(of: "]", with: "")
                     .split(separator: ",")
                     .map { $0.trimmingCharacters(in: .whitespaces) }
-            let dequeData = DequeData(id: id, position: position, initialValues: initialValues)
+            let dequeData = DSViewData(id: id, position: position, initialValues: initialValues)
             deques.append(dequeData)
             dequePositions[id] = position
         }
@@ -893,7 +899,8 @@ struct AlertsOverlay: View {
     private func handleGridAlert(orientation: GridOrientation) {
         if let position = pendingGridPosition {
             let id = UUID()
-            gridOrientation = orientation
+            let gridData = DSViewData(id: id, position: position, initialValues: gridArrayInput)
+            grids.append(gridData)
             gridPositions[id] = position
         }
         pendingGridPosition = nil
