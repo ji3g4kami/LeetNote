@@ -3,7 +3,6 @@ import SwiftUI
 struct LinkedListView: View {
     @State private var values: [String]
     @State private var position: CGPoint
-    @Binding var positions: [UUID: CGPoint]
     @Binding var isDraggingOverBin: Bool
     @Binding var binAnimation: Bool
     @Binding var lists: [[String]]
@@ -11,14 +10,12 @@ struct LinkedListView: View {
 
     init(initialValues: [String],
          initialPosition: CGPoint,
-         positions: Binding<[UUID: CGPoint]>,
          isDraggingOverBin: Binding<Bool>,
          binAnimation: Binding<Bool>,
          lists: Binding<[[String]]>,
          id: UUID) {
         _values = State(initialValue: initialValues)
         _position = State(initialValue: initialPosition)
-        _positions = positions
         _isDraggingOverBin = isDraggingOverBin
         _binAnimation = binAnimation
         _lists = lists
@@ -95,7 +92,6 @@ struct LinkedListView: View {
                 id: id,
                 objectSize: objectSize
             ) {
-                positions.removeValue(forKey: id)
                 if let index = lists.firstIndex(where: { $0 == values }) {
                     lists.remove(at: index)
                 }
@@ -108,7 +104,6 @@ struct LinkedListView: View {
     return LinkedListView(
         initialValues: ["1", "2", "3"],
         initialPosition: CGPoint(x: 200, y: 300),
-        positions: .constant([:]),
         isDraggingOverBin: .constant(false),
         binAnimation: .constant(false),
         lists: .constant([]),
