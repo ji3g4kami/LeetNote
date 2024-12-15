@@ -1,20 +1,10 @@
 import SwiftUI
 
 struct LinkedListView: View {
-    @State private var sequenceData: DSViewData<[String]>
+    @ObservedObject var sequenceData: DSViewData<[String]>
     @Binding var isDraggingOverBin: Bool
     @Binding var binAnimation: Bool
-    @Binding var lists: [[String]]
-
-    init(sequenceData: DSViewData<[String]>,
-         isDraggingOverBin: Binding<Bool>,
-         binAnimation: Binding<Bool>,
-         lists: Binding<[[String]]>) {
-        _sequenceData = State(initialValue: sequenceData)
-        _isDraggingOverBin = isDraggingOverBin
-        _binAnimation = binAnimation
-        _lists = lists
-    }
+    @Binding var lists: [DSViewData<[String]>]
 
     var body: some View {
         GeometryReader { geometry in
@@ -85,7 +75,7 @@ struct LinkedListView: View {
                 binAnimation: $binAnimation,
                 objectSize: objectSize
             ) {
-                if let index = lists.firstIndex(where: { $0 == sequenceData.values }) {
+                if let index = lists.firstIndex(where: { $0.id == sequenceData.id }) {
                     lists.remove(at: index)
                 }
             }

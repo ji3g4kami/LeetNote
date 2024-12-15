@@ -14,7 +14,7 @@ enum GridOrientation {
 }
 
 enum DrawingTool: CaseIterable {
-    case pen, eraser, rectangle, circle, arrow, text, selection, hand, deque, grid
+    case pen, eraser, rectangle, circle, arrow, text, selection, hand, deque, grid, linkedList
 
     var iconName: String {
         switch self {
@@ -28,6 +28,7 @@ enum DrawingTool: CaseIterable {
         case .hand: return "hand.draw"
         case .deque: return "rectangle.split.3x1"
         case .grid: return "rectangle.split.3x3"
+        case .linkedList: return "list.bullet"
         }
     }
 }
@@ -60,8 +61,11 @@ struct ContentView: View {
     @State private var textPosition: CGPoint?
     @State private var isShowingTextField = false
     @State private var isShowingDequeAlert = false
+    @State private var isShowingLinkedListAlert = false
     @State private var dequeInitialValues = ""
+    @State private var linkedListInitialValues = ""
     @State private var pendingDequePosition: CGPoint?
+    @State private var pendingLinkedListPosition: CGPoint?
     @State private var isShowingTextAlert = false
     @State private var isShowingGridAlert = false
     @State private var gridArrayInput = ""
@@ -72,6 +76,7 @@ struct ContentView: View {
     @State private var gridOrientation: GridOrientation = .rowByCol
     @State private var deques: [DSViewData<[String]>] = []
     @State private var grids: [DSViewData<String>] = []
+    @State private var linkedLists: [DSViewData<[String]>] = []
     
     var body: some View {
         VStack {
@@ -94,6 +99,7 @@ struct ContentView: View {
                     currentText = ""
                     deques.removeAll()
                     grids.removeAll()
+                    linkedLists.removeAll()
                 },
                 canUndo: !undoStack.isEmpty,
                 canRedo: !redoStack.isEmpty,
@@ -189,24 +195,31 @@ struct ContentView: View {
                 isShowingDequeAlert: $isShowingDequeAlert,
                 isShowingTextAlert: $isShowingTextAlert,
                 isShowingGridAlert: $isShowingGridAlert,
+                isShowingLinkedListAlert: $isShowingLinkedListAlert,
                 dequeInitialValues: $dequeInitialValues,
+                linkedListInitialValues: $linkedListInitialValues,
                 currentText: $currentText,
                 gridArrayInput: $gridArrayInput,
                 pendingDequePosition: $pendingDequePosition,
                 pendingGridPosition: $pendingGridPosition,
+                pendingLinkedListPosition: $pendingLinkedListPosition,
                 textPosition: $textPosition,
                 gridOrientation: $gridOrientation,
                 lines: $lines,
                 undoStack: $undoStack,
                 redoStack: $redoStack,
                 deques: $deques,
-                grids: $grids
+                grids: $grids,
+                linkedLists: $linkedLists
             )
         )
         .onChange(of: deques.count) { _, _ in
             selectedTool = .hand
         }
         .onChange(of: grids.count) { _, _ in
+            selectedTool = .hand
+        }
+        .onChange(of: linkedLists.count) { _, _ in
             selectedTool = .hand
         }
     }
@@ -386,7 +399,7 @@ struct ContentView: View {
                     lineWidth: line.lineWidth
                 )
             }
-        case .deque:
+        case .deque, .linkedList:
             // No need to draw anything here since deques are handled by DequeView
             break
         case .grid, .hand:
@@ -477,7 +490,7 @@ struct ContentView: View {
                     )
                 }
                 
-            case .deque:
+            case .deque, .linkedList:
                 // No need for selection indicator since deques are handled by DequeView
                 break
                 
@@ -691,6 +704,16 @@ struct ContentView: View {
                     grids: $grids
                 )
             }
+            
+            // Modify the LinkedListView creation
+            ForEach(linkedLists) { linkedListData in
+                LinkedListView(
+                    sequenceData: linkedListData,
+                    isDraggingOverBin: $isDraggingOverBin,
+                    binAnimation: $binAnimation,
+                    lists: $linkedLists
+                )
+            }
         }
     }
     
@@ -726,6 +749,10 @@ struct ContentView: View {
             } else if selectedTool == .text {
                 textPosition = location
                 isShowingTextAlert = true
+            } else if selectedTool == .linkedList {
+                pendingLinkedListPosition = location
+                isShowingLinkedListAlert = true
+                return
             } else {
                 handleTap(at: location)
             }
@@ -799,11 +826,14 @@ struct AlertsOverlay: View {
     @Binding var isShowingDequeAlert: Bool
     @Binding var isShowingTextAlert: Bool
     @Binding var isShowingGridAlert: Bool
+    @Binding var isShowingLinkedListAlert: Bool
     @Binding var dequeInitialValues: String
+    @Binding var linkedListInitialValues: String
     @Binding var currentText: String
     @Binding var gridArrayInput: String
     @Binding var pendingDequePosition: CGPoint?
     @Binding var pendingGridPosition: CGPoint?
+    @Binding var pendingLinkedListPosition: CGPoint?
     @Binding var textPosition: CGPoint?
     @Binding var gridOrientation: GridOrientation
     @Binding var lines: [Line]
@@ -811,6 +841,7 @@ struct AlertsOverlay: View {
     @Binding var redoStack: [[Line]]
     @Binding var deques: [DSViewData<[String]>]
     @Binding var grids: [DSViewData<String>]
+    @Binding var linkedLists: [DSViewData<[String]>]
     
     var body: some View {
         EmptyView()
@@ -822,6 +853,16 @@ struct AlertsOverlay: View {
                 Button("Cancel", role: .cancel) {
                     dequeInitialValues = ""
                     pendingDequePosition = nil
+                }
+            }
+            .alert("Enter Initial Values", isPresented: $isShowingLinkedListAlert) {
+                TextField("e.g., 1,2,3 or leave empty", text: $linkedListInitialValues)
+                Button("OK") {
+                    handleLinkedListAlert()
+                }
+                Button("Cancel", role: .cancel) {
+                    linkedListInitialValues = ""
+                    pendingLinkedListPosition = nil
                 }
             }
             .alert("Enter Text", isPresented: $isShowingTextAlert) {
@@ -866,6 +907,23 @@ struct AlertsOverlay: View {
         }
         pendingDequePosition = nil
         dequeInitialValues = ""
+    }
+    
+    private func handleLinkedListAlert() {
+        if let position = pendingLinkedListPosition {
+            let id = UUID()
+            let initialValues = linkedListInitialValues.isEmpty ?
+                [""] :
+                linkedListInitialValues
+                    .replacingOccurrences(of: "[", with: "")
+                    .replacingOccurrences(of: "]", with: "")
+                    .split(separator: ",")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+            let listData = DSViewData(id: id, position: position, initialValues: initialValues)
+            linkedLists.append(listData)
+        }
+        pendingLinkedListPosition = nil
+        linkedListInitialValues = ""
     }
     
     private func handleTextAlert() {
