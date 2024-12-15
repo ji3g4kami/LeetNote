@@ -59,12 +59,10 @@ struct ContentView: View {
     @State private var dragOffset: CGSize = .zero
     @State private var textPosition: CGPoint?
     @State private var isShowingTextField = false
-    @State private var dequePositions: [UUID: CGPoint] = [:]
     @State private var isShowingDequeAlert = false
     @State private var dequeInitialValues = ""
     @State private var pendingDequePosition: CGPoint?
     @State private var isShowingTextAlert = false
-    @State private var gridPositions: [UUID: CGPoint] = [:]
     @State private var isShowingGridAlert = false
     @State private var gridArrayInput = ""
     @State private var pendingGridPosition: CGPoint?
@@ -94,8 +92,8 @@ struct ContentView: View {
                     redoStack.removeAll()
                     selectedElements.removeAll()
                     currentText = ""
-                    dequePositions.removeAll()
-                    gridPositions.removeAll()
+                    deques.removeAll()
+                    grids.removeAll()
                 },
                 canUndo: !undoStack.isEmpty,
                 canRedo: !redoStack.isEmpty,
@@ -198,8 +196,6 @@ struct ContentView: View {
                 pendingGridPosition: $pendingGridPosition,
                 textPosition: $textPosition,
                 gridOrientation: $gridOrientation,
-                dequePositions: $dequePositions,
-                gridPositions: $gridPositions,
                 lines: $lines,
                 undoStack: $undoStack,
                 redoStack: $redoStack,
@@ -207,10 +203,10 @@ struct ContentView: View {
                 grids: $grids
             )
         )
-        .onChange(of: dequePositions) { _, _ in
+        .onChange(of: deques.count) { _, _ in
             selectedTool = .hand
         }
-        .onChange(of: gridPositions) { _, _ in
+        .onChange(of: grids.count) { _, _ in
             selectedTool = .hand
         }
     }
@@ -677,27 +673,23 @@ struct ContentView: View {
         ZStack {
             // Modify the DequeView creation
             ForEach(deques) { dequeData in
-                if dequePositions[dequeData.id] != nil {
-                    DequeView(
-                        dequeData: dequeData,
-                        isDraggingOverBin: $isDraggingOverBin,
-                        binAnimation: $binAnimation,
-                        deques: $deques
-                    )
-                }
+                DequeView(
+                    dequeData: dequeData,
+                    isDraggingOverBin: $isDraggingOverBin,
+                    binAnimation: $binAnimation,
+                    deques: $deques
+                )
             }
             
             // Display GridViews
             ForEach(grids) { gridData in
-                if gridPositions[gridData.id] != nil {
-                    GridView(
-                        gridData: gridData,
-                        arrayFormat: gridData.values,
-                        isDraggingOverBin: $isDraggingOverBin,
-                        binAnimation: $binAnimation,
-                        grids: $grids
-                    )
-                }
+                GridView(
+                    gridData: gridData,
+                    arrayFormat: gridData.values,
+                    isDraggingOverBin: $isDraggingOverBin,
+                    binAnimation: $binAnimation,
+                    grids: $grids
+                )
             }
         }
     }
@@ -814,8 +806,6 @@ struct AlertsOverlay: View {
     @Binding var pendingGridPosition: CGPoint?
     @Binding var textPosition: CGPoint?
     @Binding var gridOrientation: GridOrientation
-    @Binding var dequePositions: [UUID: CGPoint]
-    @Binding var gridPositions: [UUID: CGPoint]
     @Binding var lines: [Line]
     @Binding var undoStack: [[Line]]
     @Binding var redoStack: [[Line]]
@@ -873,7 +863,6 @@ struct AlertsOverlay: View {
                     .map { $0.trimmingCharacters(in: .whitespaces) }
             let dequeData = DSViewData(id: id, position: position, initialValues: initialValues)
             deques.append(dequeData)
-            dequePositions[id] = position
         }
         pendingDequePosition = nil
         dequeInitialValues = ""
@@ -901,7 +890,6 @@ struct AlertsOverlay: View {
             let id = UUID()
             let gridData = DSViewData(id: id, position: position, initialValues: gridArrayInput)
             grids.append(gridData)
-            gridPositions[id] = position
         }
         pendingGridPosition = nil
     }
